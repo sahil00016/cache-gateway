@@ -15,6 +15,9 @@ import json
 import sys
 from pathlib import Path
 
+from src.common.settings import Settings
+from src.main import create_app
+
 # Placeholders. Never connected to: the app is built, its schema read, and the
 # process exits. Nothing in the OpenAPI document depends on these values.
 _PLACEHOLDER_DATABASE_URL = "postgresql+asyncpg://schema:schema@localhost:5432/schema"
@@ -30,12 +33,6 @@ def main() -> int:
     if len(sys.argv) != 2:  # noqa: PLR2004 -- script name plus one argument
         sys.stderr.write("usage: python -m scripts.export_openapi <output-path>\n")
         return 2
-
-    # Imported lazily and deliberately: importing src.main builds the app,
-    # which validates settings. Doing that before the argument check would
-    # turn a usage error into a confusing configuration error.
-    from src.common.settings import Settings  # noqa: PLC0415
-    from src.main import create_app  # noqa: PLC0415
 
     settings = Settings(
         database_url=_PLACEHOLDER_DATABASE_URL,  # type: ignore[arg-type]
