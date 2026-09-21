@@ -73,7 +73,21 @@ jobs:
         # testcontainers starts real Postgres and Redis. Kept in a separate
         # step so a failure here is instantly distinguishable from a unit
         # failure in the run summary.
-        run: .venv/bin/pytest -q -m integration
+        #
+        # pytest exits 5 when a marker selects nothing. There are no
+        # integration tests until M2, and "none written yet" is not a failure
+        # -- but every other non-zero code still is, so a genuinely broken
+        # integration test cannot hide behind this.
+        run: |
+          set +e
+          .venv/bin/pytest -q -m integration
+          code=$?
+          set -e
+          if [ "$code" -eq 5 ]; then
+            echo "::notice::No integration tests collected yet (expected until M2)."
+            exit 0
+          fi
+          exit "$code"
         env:
           PYTHONPATH: .
 
