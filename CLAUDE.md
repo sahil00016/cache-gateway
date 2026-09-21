@@ -9,9 +9,12 @@ else. Specifically:
 - **Never** add "Generated with Claude Code", "Co-Authored-By: Claude", or any
   other tool attribution line to a commit message, PR body, or code comment.
 - The commit author is fixed by repo-local git config:
-  `sahil00016 <sahil00016@users.noreply.github.com>`. Do not change it, and do
-  not fall back to the global git identity — that is a work email and must
-  never appear on this public repository.
+  `Sahil Sonker <122673482+sahil00016@users.noreply.github.com>`. This is the
+  ID-prefixed GitHub noreply form, which is what GitHub itself uses for web
+  merges and what reliably links a commit to the profile.
+- Do **not** fall back to the global git identity. It is a work email
+  (`sahil.s@optimoloan.com`) and must never appear on this public repository.
+  Verify with `git config user.email` before the first commit in a clone.
 
 ## Git workflow
 
