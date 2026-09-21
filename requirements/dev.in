@@ -1,0 +1,7 @@
+-r test.in
+
+ruff
+mypy
+darglint
+pre-commit
+pip-tools

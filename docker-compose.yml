@@ -1,0 +1,73 @@
+# Local development stack.
+#
+# `task up` starts this. Postgres and Redis expose their real ports so psql and
+# redis-cli work from the host, which matters when you are chasing a cache bug.
+
+name: cache-gateway
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://cache_gateway:cache_gateway@db:5432/cache_gateway
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cache_gateway
+      POSTGRES_PASSWORD: cache_gateway
+      POSTGRES_DB: cache_gateway
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cache_gateway"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    command:
+      # Deliberately small so the connection pool ceiling is reachable under
+      # load. Exhausting it is part of what failure mode 3 demonstrates.
+      - postgres
+      - -c
+      - max_connections=100
+      - -c
+      - log_min_duration_statement=100
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    command:
+      # No persistence: this is a cache. Losing it on restart is correct, and
+      # forcing that assumption early stops the cache being treated as a store.
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+
+volumes:
+  pgdata:

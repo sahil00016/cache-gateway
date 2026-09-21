@@ -1,0 +1,7 @@
+-r base.in
+
+pytest
+pytest-asyncio
+pytest-cov
+asgi-lifespan
+testcontainers[postgres,redis]

@@ -1,0 +1,110 @@
+# Tooling configuration for cache-gateway.
+#
+# There is deliberately no [project] table: this service is deployed as a
+# container, not published as a package. The installable client SDK lives in
+# client/ and carries its own pyproject.toml.
+
+# --------------------------------------------------------------------------- #
+# ruff -- linter and formatter
+# --------------------------------------------------------------------------- #
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Curated strict set. Each group is here for a reason; see the comments.
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort -- import ordering
+    "N",         # pep8-naming
+    "D",         # pydocstyle -- docstrings are enforced, not optional
+    "UP",        # pyupgrade -- keep the code modern for the target version
+    "ANN",       # flake8-annotations -- every signature is typed
+    "ASYNC",     # flake8-async -- catches blocking calls inside async defs
+    "S",         # bandit -- security
+    "B",         # flake8-bugbear -- real bug patterns
+    "BLE",       # flake8-blind-except -- bare `except Exception` must be justified
+    "A",         # flake8-builtins -- no shadowing builtins
+    "C4",        # flake8-comprehensions
+    "DTZ",       # flake8-datetimez -- no naive datetimes, ever
+    "T20",       # flake8-print -- no stray print()
+    "PT",        # flake8-pytest-style
+    "RET",       # flake8-return
+    "SIM",       # flake8-simplify
+    "ARG",       # flake8-unused-arguments
+    "PTH",       # flake8-use-pathlib
+    "ERA",       # eradicate -- no commented-out code
+    "PL",        # pylint subset
+    "TRY",       # tryceratops -- exception anti-patterns
+    "RUF",       # ruff-specific
+]
+ignore = [
+    "D203",      # conflicts with D211; D211 is the modern choice
+    "D213",      # conflicts with D212; D212 is the modern choice
+    "ANN401",    # Any is occasionally correct, e.g. **kwargs passthrough
+    "TRY003",    # long messages in raise are fine with a typed hierarchy
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests do not need docstrings on every function, may use assert, and may
+# contain "magic" values -- that is what a test IS.
+"tests/**/*.py" = ["D", "S101", "ANN", "PLR2004", "ARG"]
+"migrations/**/*.py" = ["D", "ANN", "ERA", "N999"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
+
+# --------------------------------------------------------------------------- #
+# mypy -- strict
+# --------------------------------------------------------------------------- #
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+warn_no_return = true
+show_error_codes = true
+pretty = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# Third-party packages without bundled type stubs.
+module = ["testcontainers.*", "pythonjsonlogger.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+
+# --------------------------------------------------------------------------- #
+# pytest
+# --------------------------------------------------------------------------- #
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+]
+markers = [
+    "integration: requires real Postgres and Redis (testcontainers)",
+    "slow: takes more than a second",
+]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = ["src/main.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

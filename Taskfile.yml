@@ -1,0 +1,151 @@
+version: "3"
+
+# Task runner for cache-gateway. `task --list` shows everything.
+# Every command CI runs is available here, so a green local run means a green
+# pipeline -- if the two can drift, the pipeline stops being trusted.
+
+vars:
+  VENV: .venv
+  PY: .venv/bin/python
+  PIP_COMPILE: .venv/bin/pip-compile
+  SRC: src tests scripts migrations
+
+env:
+  PYTHONPATH: .
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  # ----------------------------------------------------------------- setup --
+  venv:
+    desc: Create the virtualenv
+    status:
+      - test -d {{.VENV}}
+    cmds:
+      - uv venv --python 3.12 {{.VENV}}
+
+  install:
+    desc: Install dev dependencies into the venv
+    deps: [venv]
+    sources:
+      - requirements/dev.txt
+    cmds:
+      - uv pip install --python {{.PY}} --require-hashes -r requirements/dev.txt
+      - "{{.VENV}}/bin/pre-commit install"
+
+  lock:
+    desc: Recompile all requirements lockfiles from their .in files
+    cmds:
+      - "{{.PIP_COMPILE}} --quiet --generate-hashes --strip-extras --output-file=requirements/base.txt requirements/base.in"
+      - "{{.PIP_COMPILE}} --quiet --generate-hashes --strip-extras --output-file=requirements/test.txt requirements/test.in"
+      - "{{.PIP_COMPILE}} --quiet --generate-hashes --strip-extras --allow-unsafe --output-file=requirements/dev.txt requirements/dev.in"
+
+  # ------------------------------------------------------------ code quality --
+  fmt:
+    desc: Format the code
+    cmds:
+      - "{{.VENV}}/bin/ruff format {{.SRC}}"
+      - "{{.VENV}}/bin/ruff check --fix {{.SRC}}"
+
+  lint:
+    desc: Lint without modifying anything
+    cmds:
+      - "{{.VENV}}/bin/ruff check {{.SRC}}"
+      - "{{.VENV}}/bin/ruff format --check {{.SRC}}"
+
+  types:
+    desc: Type-check with mypy in strict mode
+    cmds:
+      - "{{.VENV}}/bin/mypy src"
+
+  docstrings:
+    desc: Verify docstrings describe the real signature
+    cmds:
+      - "find src -name '*.py' -print0 | xargs -0 {{.VENV}}/bin/darglint -v 2"
+
+  # ------------------------------------------------------------------ tests --
+  test:
+    desc: Run the unit test suite
+    cmds:
+      - "{{.VENV}}/bin/pytest -q -m 'not integration'"
+
+  test-integration:
+    desc: Run integration tests (starts real Postgres and Redis containers)
+    cmds:
+      - "{{.VENV}}/bin/pytest -q -m integration"
+
+  cov:
+    desc: Run tests with a coverage report
+    cmds:
+      - "{{.VENV}}/bin/pytest --cov --cov-report=term-missing --cov-report=html"
+
+  check:
+    desc: Everything CI runs. Green here means green there.
+    cmds:
+      - task: lint
+      - task: types
+      - task: docstrings
+      - task: test
+      - task: openapi-check
+      - task: migrations-check
+
+  # ------------------------------------------------------------- contracts --
+  openapi:
+    desc: Export the OpenAPI spec to api/openapi.json
+    cmds:
+      - mkdir -p api
+      - "{{.PY}} -m scripts.export_openapi api/openapi.json"
+
+  openapi-check:
+    desc: Fail if the committed OpenAPI spec is stale
+    cmds:
+      - mkdir -p api
+      - "{{.PY}} -m scripts.export_openapi /tmp/openapi.check.json"
+      - cmd: diff -q api/openapi.json /tmp/openapi.check.json
+        msg: "api/openapi.json is stale. Run `task openapi` and commit the result."
+
+  migrations-check:
+    desc: Fail if there is more than one Alembic head
+    cmds:
+      - "{{.VENV}}/bin/python -m scripts.check_single_head"
+
+  migrate:
+    desc: Apply all pending migrations
+    cmds:
+      - "{{.VENV}}/bin/alembic upgrade head"
+
+  migration:
+    desc: 'Autogenerate a migration. Usage: task migration -- "add products"'
+    cmds:
+      - '{{.VENV}}/bin/alembic revision --autogenerate -m "{{.CLI_ARGS}}"'
+
+  # ----------------------------------------------------------------- local --
+  up:
+    desc: Start the full local stack
+    cmds:
+      - docker compose up -d --build
+      - docker compose ps
+
+  down:
+    desc: Stop the local stack, keeping data
+    cmds:
+      - docker compose down
+
+  nuke:
+    desc: Stop the local stack and delete its volumes
+    cmds:
+      - docker compose down -v
+
+  logs:
+    desc: Tail the API logs
+    cmds:
+      - docker compose logs -f api
+
+  dev:
+    desc: Run the API on the host with reload, against the compose datastores
+    cmds:
+      - "{{.VENV}}/bin/uvicorn src.main:app --reload --port 8000"

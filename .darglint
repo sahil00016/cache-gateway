@@ -1,0 +1,6 @@
+# darglint: checks that docstring Args/Returns/Raises match the real signature.
+# ruff's D rules check that a docstring EXISTS and is formatted correctly;
+# darglint checks that it is TRUE. The two are complementary.
+[darglint]
+docstring_style = google
+strictness = full

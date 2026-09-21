@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Env
+.env
+.env.local
+
+# Editors
+.vscode/
+.idea/
+
+# Build / local artefacts
+dist/
+build/
+benchmarks/results/*.json
+!benchmarks/results/.gitkeep
+
+# Terraform
+deploy/terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# Node (dashboard)
+web/node_modules/
+web/dist/

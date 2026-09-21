@@ -1,0 +1,24 @@
+# Runtime dependencies. Compiled to base.txt with hashes.
+# Also used for prod -- this service has no prod-only dependency.
+fastapi
+uvicorn[standard]
+gunicorn
+
+pydantic
+pydantic-settings
+
+sqlalchemy[asyncio]
+asyncpg
+alembic
+
+redis
+httpx
+
+python-json-logger
+prometheus-client
+
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-http
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-sqlalchemy
+opentelemetry-instrumentation-redis

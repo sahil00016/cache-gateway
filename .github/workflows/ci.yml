@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  # A new push supersedes an in-flight run on the same ref.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  quality:
+    name: Lint, types, docstrings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: |
+          uv venv --python ${{ env.PYTHON_VERSION }} .venv
+          uv pip install --python .venv/bin/python --require-hashes -r requirements/dev.txt
+
+      - name: ruff (lint)
+        run: .venv/bin/ruff check src tests scripts migrations
+
+      - name: ruff (format)
+        run: .venv/bin/ruff format --check src tests scripts migrations
+
+      - name: mypy (strict)
+        run: .venv/bin/mypy src
+
+      - name: darglint (docstrings match signatures)
+        run: find src -name '*.py' -print0 | xargs -0 .venv/bin/darglint -v 2
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: |
+          uv venv --python ${{ env.PYTHON_VERSION }} .venv
+          uv pip install --python .venv/bin/python --require-hashes -r requirements/dev.txt
+
+      - name: Unit tests
+        run: .venv/bin/pytest -q -m 'not integration' --cov --cov-report=xml
+        env:
+          PYTHONPATH: .
+
+      - name: Integration tests
+        # testcontainers starts real Postgres and Redis. Kept in a separate
+        # step so a failure here is instantly distinguishable from a unit
+        # failure in the run summary.
+        run: .venv/bin/pytest -q -m integration
+        env:
+          PYTHONPATH: .
+
+  contracts:
+    name: Contract drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: |
+          uv venv --python ${{ env.PYTHON_VERSION }} .venv
+          uv pip install --python .venv/bin/python --require-hashes -r requirements/dev.txt
+
+      - name: OpenAPI spec is current
+        # The dashboard's TypeScript client is generated from this file. If it
+        # drifts, the frontend compiles against a contract the backend no
+        # longer serves.
+        run: |
+          .venv/bin/python -m scripts.export_openapi /tmp/openapi.json
+          diff -u api/openapi.json /tmp/openapi.json
+        env:
+          PYTHONPATH: .
+
+      - name: Single Alembic head
+        run: .venv/bin/python -m scripts.check_single_head
+        env:
+          PYTHONPATH: .
+
+      - name: Requirements lockfiles are current
+        # Catches an edit to a .in file that was never recompiled.
+        run: |
+          .venv/bin/pip-compile --quiet --generate-hashes --strip-extras \
+            --output-file=/tmp/base.txt requirements/base.in
+          diff -u <(grep -v '^#' requirements/base.txt) <(grep -v '^#' /tmp/base.txt)
+
+  container:
+    name: Container builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          load: true
+          tags: cache-gateway:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image starts and answers liveness
+        # Building is not proof the image runs. This catches a missing runtime
+        # library or a bad CMD, which a build alone will not.
+        run: |
+          docker run -d --name cg -p 8000:8000 \
+            -e DATABASE_URL='postgresql+asyncpg://u:p@localhost:5432/d' \
+            -e REDIS_URL='redis://localhost:6379/0' \
+            -e WEB_CONCURRENCY=1 \
+            cache-gateway:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/healthz; then echo "\nliveness OK"; exit 0; fi
+            sleep 1
+          done
+          echo "container did not become live:"
+          docker logs cg
+          exit 1
