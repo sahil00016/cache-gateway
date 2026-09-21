@@ -21,7 +21,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 
 from src.common.settings import Settings, get_settings
-from src.core.metrics import REGISTRY
+from src.core.metrics import build_scrape_registry
 from src.db.engine import get_engine
 from src.db.redis import get_redis
 from src.schema.health import DependencyStatus, LivenessResult, ReadinessResult
@@ -104,6 +104,10 @@ async def metrics() -> Response:
     of the service's contract with clients.
 
     Returns:
-        The rendered metrics payload.
+        The rendered metrics payload, aggregated across every live worker when
+        running multi-process.
     """
-    return Response(content=generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
+    return Response(
+        content=generate_latest(build_scrape_registry()),
+        media_type=CONTENT_TYPE_LATEST,
+    )

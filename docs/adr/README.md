@@ -15,6 +15,8 @@ is impossible to recover six months later.
 | 0004 | TTL jitter for avalanche protection | Pending (M5) |
 | 0005 | In-process coalescing, and when the Redis lock earns its cost | Pending (M6) |
 | 0006 | Cache-aside with delete-on-write | Pending (M7) |
+| [0007](0007-metrics-under-multiple-workers.md) | Metrics must aggregate across gunicorn workers | Accepted |
+| [0008](0008-benchmark-harness-correctness.md) | The benchmark harness is part of the system under test | Accepted |
 
 ## Template
 

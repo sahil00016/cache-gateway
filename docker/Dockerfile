@@ -31,7 +31,8 @@ FROM python:3.12-slim AS runtime
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PROMETHEUS_MULTIPROC_DIR=/dev/shm/cache-gateway-metrics
 
 # libpq5 only -- asyncpg needs the client library, not the build headers.
 RUN apt-get update \
