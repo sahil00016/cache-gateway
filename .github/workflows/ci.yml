@@ -35,10 +35,10 @@ jobs:
           uv pip install --python .venv/bin/python --require-hashes -r requirements/dev.txt
 
       - name: ruff (lint)
-        run: .venv/bin/ruff check src tests scripts migrations
+        run: .venv/bin/ruff check .
 
       - name: ruff (format)
-        run: .venv/bin/ruff format --check src tests scripts migrations
+        run: .venv/bin/ruff format --check .
 
       - name: mypy (strict)
         run: .venv/bin/mypy src

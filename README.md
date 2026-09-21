@@ -38,7 +38,7 @@ git clone https://github.com/sahil00016/cache-gateway.git
 cd cache-gateway
 cp .env.example .env
 task up          # Postgres, Redis and the API
-curl localhost:8000/healthz
+curl localhost:8010/healthz
 ```
 
 Running on the host instead, against the compose datastores:
@@ -47,6 +47,10 @@ Running on the host instead, against the compose datastores:
 task install
 task dev
 ```
+
+Host ports are **8010** (API), **5433** (Postgres) and **6380** (Redis) rather
+than the defaults, so the stack can run alongside other local services without
+a port clash.
 
 ---
 

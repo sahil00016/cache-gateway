@@ -14,8 +14,15 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://cache_gateway:cache_gateway@db:5432/cache_gateway
       REDIS_URL: redis://redis:6379/0
+      # Overrides .env. SQL echo is useful when developing on the host, but
+      # echoing every statement during a benchmark would dominate the timings
+      # being measured -- so the deployable artifact never echoes.
+      DB_ECHO: "false"
+      LOG_LEVEL: WARNING
     ports:
-      - "8000:8000"
+      # 8010 on the host: 8000 is taken by the Co-lending work stack's nginx.
+      # The container still listens on 8000.
+      - "8010:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -30,7 +37,9 @@ services:
       POSTGRES_PASSWORD: cache_gateway
       POSTGRES_DB: cache_gateway
     ports:
-      - "5432:5432"
+      # 5433 on the host: 5432 is taken by the Co-lending work stack. The
+      # container still listens on 5432 inside the compose network.
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -50,7 +59,8 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      # 6380 on the host, for the same reason as Postgres above.
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
