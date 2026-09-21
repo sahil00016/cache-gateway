@@ -18,12 +18,28 @@ else. Specifically:
 
 ## Git workflow
 
-- `main` is protected by the `no-commit-to-branch` pre-commit hook.
-- All work happens on a branch, then a PR. CI runs on `pull_request`, so every
-  change carries a visible green check.
+Two long-lived branches, promoted in one direction only:
+
+```
+feature branch  --PR-->  uat  --PR-->  main
+                          |             |
+                          v             v
+                     UAT environment   PROD environment
+```
+
+- **`uat`** is the integration branch and the dev environment. Features land
+  here first and are exercised against real infrastructure.
+- **`main`** is stable. Nothing reaches it that has not run in uat.
+- `main` is protected by the `no-commit-to-branch` pre-commit hook. `uat` is
+  directly pushable, so trying something out does not require PR ceremony.
+- CI runs on every PR regardless of base, and on pushes to both branches.
+- **Promotion never rebuilds.** The image is tagged by commit SHA, so the
+  artefact promoted from uat to prod is byte-identical to the one that was
+  tested. Rebuilding on promotion would defeat the point of having uat.
 - Conventional commit prefixes: `feat`, `fix`, `chore`, `docs`, `test`, `perf`,
   `refactor`.
 - One milestone per branch, named for it (`feat/m2-baseline-endpoint`).
+- `task promote` opens the uat -> main PR.
 
 ## Before any commit
 

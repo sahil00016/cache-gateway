@@ -1,9 +1,10 @@
 name: CI
 
 on:
+  # Every PR, whatever its base -- feature -> uat and uat -> main both gate here.
   pull_request:
   push:
-    branches: [main]
+    branches: [main, uat]
 
 concurrency:
   # A new push supersedes an in-flight run on the same ref.
