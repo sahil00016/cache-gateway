@@ -123,6 +123,26 @@ tasks:
     cmds:
       - '{{.VENV}}/bin/alembic revision --autogenerate -m "{{.CLI_ARGS}}"'
 
+  # ------------------------------------------------------------- promotion --
+  promote:
+    desc: Open the uat -> main promotion PR
+    cmds:
+      - git push origin uat
+      - |
+        gh pr create --base main --head uat \
+          --title "promote: uat -> main" \
+          --body "Promoting uat to main. Everything here has run in the UAT environment.
+
+        $(git log --oneline origin/main..origin/uat | sed 's/^/- /')" \
+          || gh pr view --base main --head uat --web
+
+  promote-status:
+    desc: Show what is on uat but not yet on main
+    cmds:
+      - git fetch -q origin
+      - 'echo "Commits on uat awaiting promotion to main:"'
+      - git log --oneline origin/main..origin/uat || echo "  (none -- uat and main are level)"
+
   # ----------------------------------------------------------------- local --
   up:
     desc: Start the full local stack

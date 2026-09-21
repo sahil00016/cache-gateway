@@ -2,17 +2,28 @@ name: Deploy
 
 # DISABLED UNTIL M10.
 #
-# This workflow is written now so the deployment path is reviewable alongside
-# the code it deploys, rather than being invented under pressure at the end.
-# It is intentionally manual-dispatch only: no AWS account, EC2 instance or
-# Terraform state exists yet, so an automatic trigger would only ever fail.
+# Written now so the deployment path is reviewable alongside the code it
+# deploys, rather than being invented under pressure at the end.
 #
-# To enable at M10:
-#   1. Provision the box:  cd deploy/terraform && terraform apply
-#   2. Add repository secrets: AWS_DEPLOY_ROLE_ARN, EC2_HOST, EC2_SSH_KEY
-#   3. Add `push: branches: [main]` to the triggers below
+# Promotion flow:
 #
-# Authentication uses OIDC, not long-lived access keys. An IAM role trusted by
+#   feature branch  --PR-->  uat  --PR-->  main
+#                             |             |
+#                             v             v
+#                        UAT environment  PROD environment
+#
+# Today only `workflow_dispatch` is wired, because no AWS account, instance or
+# Terraform state exists yet and an automatic trigger would only ever fail.
+#
+# To enable at M10, uncomment the `push` block below:
+#
+#   push:
+#     branches: [uat, main]
+#
+# ...and add these repository secrets per GitHub Environment (`uat`, `prod`):
+#   AWS_DEPLOY_ROLE_ARN, DEPLOY_HOST, DEPLOY_SSH_KEY
+#
+# Authentication is OIDC, not long-lived access keys: an IAM role trusted by
 # GitHub's OIDC provider is assumed per run, so no AWS credential is ever
 # stored in this repository.
 
@@ -26,20 +37,48 @@ on:
         type: choice
         options: [uat, prod]
 
+  # push:
+  #   branches: [uat, main]
+
 permissions:
   id-token: write   # required to request the OIDC token
   contents: read
 
 concurrency:
   # Never let two deploys to the same environment overlap.
-  group: deploy-${{ inputs.environment }}
+  group: deploy-${{ inputs.environment || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
+  resolve:
+    name: Resolve target environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.target.outputs.environment }}
+    steps:
+      - name: Map branch to environment
+        id: target
+        # A manual run names its target directly. A push infers it from the
+        # branch, so `uat` can never accidentally deploy to production.
+        run: |
+          if [ -n "${{ inputs.environment }}" ]; then
+            target="${{ inputs.environment }}"
+          elif [ "${{ github.ref_name }}" = "main" ]; then
+            target="prod"
+          elif [ "${{ github.ref_name }}" = "uat" ]; then
+            target="uat"
+          else
+            echo "::error::${{ github.ref_name }} is not a deployable branch."
+            exit 1
+          fi
+          echo "environment=$target" >> "$GITHUB_OUTPUT"
+          echo "::notice::Deploying to $target"
+
   build-and-push:
     name: Build and push to ECR
+    needs: resolve
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ needs.resolve.outputs.environment }}
     outputs:
       image: ${{ steps.meta.outputs.image }}
     steps:
@@ -57,8 +96,12 @@ jobs:
 
       - name: Compute image tag
         id: meta
-        # Tag by commit SHA, never `latest`. A deploy must name exactly one
-        # immutable artefact, or a rollback has nothing precise to roll back to.
+        # Tagged by commit SHA, never `latest`. A deploy must name exactly one
+        # immutable artefact or a rollback has nothing precise to roll back to.
+        #
+        # The same SHA promoted from uat to main is the SAME image. Nothing is
+        # rebuilt on promotion -- what was tested in uat is what reaches prod,
+        # which is the entire point of having a uat environment.
         run: |
           echo "image=${{ steps.ecr.outputs.registry }}/cache-gateway:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
@@ -75,10 +118,14 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    name: Deploy to EC2
-    needs: build-and-push
+    name: Deploy
+    needs: [resolve, build-and-push]
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    # A GitHub Environment named `prod` can carry a required-reviewer rule, so
+    # promotion to production pauses for an explicit approval.
+    environment:
+      name: ${{ needs.resolve.outputs.environment }}
+      url: http://${{ secrets.DEPLOY_HOST }}:8000
     steps:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v5
@@ -86,32 +133,34 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ap-south-1
 
-      - name: Pull the new image, migrate, then restart
+      - name: Pull, migrate, then restart
         # Ordering matters: migrations run before the new container serves
-        # traffic, and they must be backward compatible with the currently
-        # running version, because for a moment both are live.
+        # traffic, and they must be backward compatible with the version still
+        # running, because for a moment both are live.
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.EC2_HOST }}
+          host: ${{ secrets.DEPLOY_HOST }}
           username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: IMAGE
           script: |
             set -euo pipefail
-            cd /opt/cache-gateway
+            cd /opt/cache-gateway/${{ needs.resolve.outputs.environment }}
             aws ecr get-login-password --region ap-south-1 \
-              | docker login --username AWS --password-stdin "${{ needs.build-and-push.outputs.image }}"
-            export IMAGE="${{ needs.build-and-push.outputs.image }}"
+              | docker login --username AWS --password-stdin "${IMAGE%%/*}"
             docker compose pull api
             docker compose run --rm api alembic upgrade head
             docker compose up -d --no-deps api
+        env:
+          IMAGE: ${{ needs.build-and-push.outputs.image }}
 
       - name: Verify the deployed instance is serving
         run: |
-          for i in $(seq 1 30); do
-            if curl -fsS "http://${{ secrets.EC2_HOST }}:8000/healthz"; then
+          for _ in $(seq 1 30); do
+            if curl -fsS "http://${{ secrets.DEPLOY_HOST }}:8000/healthz"; then
               echo "deploy verified"; exit 0
             fi
             sleep 2
           done
-          echo "deployed instance never answered liveness"
+          echo "::error::Deployed instance never answered liveness."
           exit 1
