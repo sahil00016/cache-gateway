@@ -148,4 +148,4 @@ tasks:
   dev:
     desc: Run the API on the host with reload, against the compose datastores
     cmds:
-      - "{{.VENV}}/bin/uvicorn src.main:app --reload --port 8000"
+      - "{{.VENV}}/bin/uvicorn src.asgi:app --reload --port 8000"

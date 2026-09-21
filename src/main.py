@@ -1,4 +1,14 @@
-"""Application factory and ASGI entrypoint."""
+"""Application factory.
+
+This module is deliberately free of side effects: importing it must not build
+an app or read configuration. The ASGI entrypoint servers bind to lives in
+``src.asgi``.
+
+That separation is not cosmetic. With ``app = create_app()`` here, any import
+of this module validated settings, so a tool that only wanted the OpenAPI
+schema still needed a database URL -- which passed locally, where a .env file
+exists, and failed in CI, where none does.
+"""
 
 from fastapi import FastAPI
 
@@ -46,6 +56,3 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(api_router)
 
     return app
-
-
-app = create_app()

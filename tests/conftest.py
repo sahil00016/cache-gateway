@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from src.common.settings import Settings, get_settings
+from src.main import create_app
 
 _TEST_ENV = {
     "APP_NAME": "cache-gateway-test",
@@ -53,12 +54,6 @@ async def client(settings: Settings) -> AsyncIterator[httpx.AsyncClient]:
     Skipping lifespan keeps unit tests free of real Postgres and Redis. Tests
     that need initialised dependencies are integration tests.
     """
-    # Imported lazily and deliberately: src.main builds the app at module
-    # level, so a top-level import here would run at collection time -- before
-    # the env fixture has patched the environment -- and would read the
-    # developer's .env instead of the pinned test values.
-    from src.main import create_app  # noqa: PLC0415
-
     app = create_app(settings)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
