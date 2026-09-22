@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from src.api.v1 import health, products
+from src.api.v1 import admin, health, products
 
 api_router = APIRouter()
 
@@ -11,3 +11,4 @@ api_router = APIRouter()
 api_router.include_router(health.router)
 
 api_router.include_router(products.router)
+api_router.include_router(admin.router)

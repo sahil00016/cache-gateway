@@ -1,13 +1,17 @@
-// M2 baseline: reads served straight from Postgres, with no cache at all.
+// The read-path benchmark, reused unchanged from milestone to milestone.
 //
-// This run is the control. Every protection added at M3 to M7 is measured as a
-// delta against these numbers, so the methodology here is fixed and must not
-// change later -- a "before" and an "after" measured differently prove nothing.
+// M2 ran this with no cache -- the control. M3 onward runs the identical
+// request logic and thresholds against a cached service, and SCENARIO is the
+// only thing that changes, so results land under a different name instead of
+// overwriting the control. The methodology itself must not change -- a
+// "before" and an "after" measured differently prove nothing.
 //
 //   k6 run -e DIST=zipf benchmarks/scenarios/baseline.js
+//   k6 run -e DIST=zipf -e SCENARIO=cache-aside benchmarks/scenarios/baseline.js
 //
 // Env:
 //   BASE_URL  default http://localhost:8010
+//   SCENARIO  result label prefix, default 'baseline'
 //   DIST      zipf (default) | uniform | absent
 //   DATASET   number of seeded products, default 1000000
 //   SKEW      Zipf exponent, default 1.1
@@ -93,7 +97,8 @@ export function read() {
 // point of taking a baseline.
 export function handleSummary(data) {
   const run = __ENV.RUN || '1';
-  const label = `baseline-${DIST}`;
+  const scenario = __ENV.SCENARIO || 'baseline';
+  const label = `${scenario}-${DIST}`;
   const m = data.metrics;
   const out = {
     scenario: label,
