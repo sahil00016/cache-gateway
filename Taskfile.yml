@@ -8,7 +8,9 @@ vars:
   VENV: .venv
   PY: .venv/bin/python
   PIP_COMPILE: .venv/bin/pip-compile
-  SRC: src tests scripts migrations
+  # '.' on purpose: an explicit list drifts from pre-commit, which
+  # lints everything. That has already happened twice.
+  SRC: .
 
 env:
   PYTHONPATH: .
@@ -168,4 +170,4 @@ tasks:
   dev:
     desc: Run the API on the host with reload, against the compose datastores
     cmds:
-      - "{{.VENV}}/bin/uvicorn src.asgi:app --reload --port 8000"
+      - "{{.VENV}}/bin/uvicorn src.asgi:app --reload --port 8010"

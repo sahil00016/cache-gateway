@@ -25,6 +25,24 @@ results/      raw JSON output, committed
 graphs/       exported Grafana panels, committed
 ```
 
+## Before believing any result
+
+Check `iteration_duration` against `http_req_duration`. If the former
+substantially exceeds the latter, **the harness is the bottleneck** and the
+numbers describe the test, not the service. This rule exists because the first
+baseline run reported 15.7 req/s against a service that comfortably sustains
+400 — see [ADR-0008](../docs/adr/0008-benchmark-harness-correctness.md).
+
+Corollaries, learned the same way:
+
+- Any setup work in a k6 scenario belongs at **module scope**, not inside an
+  iteration. k6 gives every VU its own JavaScript runtime, so lazy
+  initialisation runs once per VU and lands in the measurement.
+- Investigate small anomalies. Fifteen unexplained 404s in 36,000 requests
+  looked like noise and was a real bug in the key sampler.
+- Confirm `/metrics` aggregates across workers before trusting it
+  ([ADR-0007](../docs/adr/0007-metrics-under-multiple-workers.md)).
+
 ## Reporting
 
 Each failure mode produces one table and one graph:

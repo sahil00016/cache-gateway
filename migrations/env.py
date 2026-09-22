@@ -13,7 +13,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from src.common.settings import get_settings
-from src.model.base import Base
+from src.model import Base  # imports every model, so metadata is complete
 
 config = context.config
 

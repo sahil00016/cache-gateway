@@ -46,6 +46,19 @@
         "title": "DependencyStatus",
         "type": "object"
       },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
       "LivenessResult": {
         "description": "Result of a liveness probe.",
         "properties": {
@@ -65,6 +78,121 @@
           "service"
         ],
         "title": "LivenessResult",
+        "type": "object"
+      },
+      "PageMeta": {
+        "description": "Pagination metadata for a list response.",
+        "properties": {
+          "limit": {
+            "description": "Page size requested.",
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Items skipped before this page.",
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Total items matching the query.",
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "PageMeta",
+        "type": "object"
+      },
+      "PaginatedResponse_ProductRead_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ProductRead"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          },
+          "success": {
+            "default": true,
+            "description": "Always true.",
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PaginatedResponse[ProductRead]",
+        "type": "object"
+      },
+      "ProductRead": {
+        "description": "A product as returned by the API.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price_cents": {
+            "description": "Price in minor units, to avoid float money.",
+            "title": "Price Cents",
+            "type": "integer"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sku",
+          "name",
+          "description",
+          "price_cents",
+          "category",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProductRead",
         "type": "object"
       },
       "ReadinessResult": {
@@ -88,6 +216,64 @@
           "dependencies"
         ],
         "title": "ReadinessResult",
+        "type": "object"
+      },
+      "SuccessResponse_ProductRead_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ProductRead"
+          },
+          "success": {
+            "default": true,
+            "description": "Always true.",
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[ProductRead]",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
         "type": "object"
       }
     }
@@ -144,6 +330,102 @@
         "summary": "Readiness probe",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/v1/products": {
+      "get": {
+        "description": "Return several products in one request.\n\nExists mainly to expose stampede behaviour more sharply than the single\nread can: one request can miss on many keys at once.\n\nArgs:\n    service: Injected product service.\n    ids: Product ids to fetch, capped to keep one request from becoming a\n        denial-of-service vector against the database.\n\nReturns:\n    The products that were found. Missing ids are omitted, not errors.",
+        "operationId": "get_products_v1_products_get",
+        "parameters": [
+          {
+            "description": "Product ids. Repeat the parameter: ?ids=1&ids=2",
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "description": "Product ids. Repeat the parameter: ?ids=1&ids=2",
+              "items": {
+                "type": "integer"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "title": "Ids",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_ProductRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fetch several products by id",
+        "tags": [
+          "products"
+        ]
+      }
+    },
+    "/v1/products/{product_id}": {
+      "get": {
+        "description": "Return a single product.\n\nArgs:\n    product_id: The product's id.\n    service: Injected product service.\n\nReturns:\n    The product, wrapped in the standard success envelope.",
+        "operationId": "get_product_v1_products__product_id__get",
+        "parameters": [
+          {
+            "description": "Product id.",
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "description": "Product id.",
+              "minimum": 1,
+              "title": "Product Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ProductRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fetch one product by id",
+        "tags": [
+          "products"
         ]
       }
     }
