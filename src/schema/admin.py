@@ -1,4 +1,4 @@
-"""Schema for the effective-configuration endpoint."""
+"""Schema for admin endpoints: effective configuration and Bloom filter stats."""
 
 from pydantic import BaseModel, Field
 
@@ -34,3 +34,39 @@ class EffectiveSettings(BaseModel):
     coalesce_enabled: bool = Field(description="In-process request coalescing.")
     redis_lock_enabled: bool = Field(description="Cross-worker stampede lock.")
     redis_lock_ttl_ms: int
+
+
+class BloomStats(BaseModel):
+    """Current Bloom filter statistics.
+
+    Used by the dashboard to display filter health and the measured false
+    positive rate vs. the predicted rate.
+    """
+
+    enabled: bool = Field(description="Whether penetration protection is active.")
+    expected_items: int = Field(description="The n in the sizing formula.")
+    items_added: int = Field(description="Count of keys added to the filter.")
+    saturation: float = Field(
+        description="Fraction of capacity in use (items_added / expected_items)."
+    )
+    target_fp_rate: float = Field(description="The p in the sizing formula.")
+    measured_fp_rate: float = Field(
+        description="Empirical false positive rate from observed lookups."
+    )
+    total_lookups: int = Field(description="Count of filter queries since startup or rebuild.")
+    false_positives: int = Field(
+        description="Count of lookups that said 'might exist' but Postgres said no."
+    )
+    m_bits: int = Field(description="Filter size in bits.")
+    k_hashes: int = Field(description="Count of hash functions.")
+
+
+class BloomRebuildResult(BaseModel):
+    """Result of rebuilding the Bloom filter from Postgres.
+
+    The rebuild duration is the measured cost of recovering from the deletion
+    problem. This number appears in ADR-0003 and the README.
+    """
+
+    count: int = Field(description="Count of product IDs loaded into the filter.")
+    duration_seconds: float = Field(description="Time spent rebuilding, in seconds.")

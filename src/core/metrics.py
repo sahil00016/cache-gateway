@@ -86,6 +86,39 @@ inflight_coalesced_keys = Gauge(
     multiprocess_mode="livesum",
 )
 
+bloom_queries_total = Counter(
+    "cache_gateway_bloom_queries_total",
+    "Bloom filter lookups by result (hit=might exist, miss=definitely not).",
+    labelnames=("result",),
+    registry=REGISTRY,
+)
+
+bloom_adds_total = Counter(
+    "cache_gateway_bloom_adds_total",
+    "Keys added to the Bloom filter.",
+    registry=REGISTRY,
+)
+
+bloom_build_duration_seconds = Histogram(
+    "cache_gateway_bloom_build_duration_seconds",
+    "Time to rebuild the Bloom filter from Postgres, in seconds.",
+    registry=REGISTRY,
+)
+
+bloom_saturation = Gauge(
+    "cache_gateway_bloom_saturation",
+    "Fraction of the filter's capacity in use (items_added / expected_items).",
+    registry=REGISTRY,
+    multiprocess_mode="livesum",
+)
+
+bloom_measured_fp_rate = Gauge(
+    "cache_gateway_bloom_measured_fp_rate",
+    "Empirical false positive rate (false positives / total lookups).",
+    registry=REGISTRY,
+    multiprocess_mode="livesum",
+)
+
 
 def build_scrape_registry() -> CollectorRegistry:
     """Return the registry a scrape should render.
