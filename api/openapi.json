@@ -1,6 +1,96 @@
 {
   "components": {
     "schemas": {
+      "BloomRebuildResult": {
+        "description": "Result of rebuilding the Bloom filter from Postgres.\n\nThe rebuild duration is the measured cost of recovering from the deletion\nproblem. This number appears in ADR-0003 and the README.",
+        "properties": {
+          "count": {
+            "description": "Count of product IDs loaded into the filter.",
+            "title": "Count",
+            "type": "integer"
+          },
+          "duration_seconds": {
+            "description": "Time spent rebuilding, in seconds.",
+            "title": "Duration Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "count",
+          "duration_seconds"
+        ],
+        "title": "BloomRebuildResult",
+        "type": "object"
+      },
+      "BloomStats": {
+        "description": "Current Bloom filter statistics.\n\nUsed by the dashboard to display filter health and the measured false\npositive rate vs. the predicted rate.",
+        "properties": {
+          "enabled": {
+            "description": "Whether penetration protection is active.",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expected_items": {
+            "description": "The n in the sizing formula.",
+            "title": "Expected Items",
+            "type": "integer"
+          },
+          "false_positives": {
+            "description": "Count of lookups that said 'might exist' but Postgres said no.",
+            "title": "False Positives",
+            "type": "integer"
+          },
+          "items_added": {
+            "description": "Count of keys added to the filter.",
+            "title": "Items Added",
+            "type": "integer"
+          },
+          "k_hashes": {
+            "description": "Count of hash functions.",
+            "title": "K Hashes",
+            "type": "integer"
+          },
+          "m_bits": {
+            "description": "Filter size in bits.",
+            "title": "M Bits",
+            "type": "integer"
+          },
+          "measured_fp_rate": {
+            "description": "Empirical false positive rate from observed lookups.",
+            "title": "Measured Fp Rate",
+            "type": "number"
+          },
+          "saturation": {
+            "description": "Fraction of capacity in use (items_added / expected_items).",
+            "title": "Saturation",
+            "type": "number"
+          },
+          "target_fp_rate": {
+            "description": "The p in the sizing formula.",
+            "title": "Target Fp Rate",
+            "type": "number"
+          },
+          "total_lookups": {
+            "description": "Count of filter queries since startup or rebuild.",
+            "title": "Total Lookups",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "expected_items",
+          "items_added",
+          "saturation",
+          "target_fp_rate",
+          "measured_fp_rate",
+          "total_lookups",
+          "false_positives",
+          "m_bits",
+          "k_hashes"
+        ],
+        "title": "BloomStats",
+        "type": "object"
+      },
       "DependencyStatus": {
         "description": "Reachability of a single dependency.",
         "properties": {
@@ -301,6 +391,42 @@
         "title": "ReadinessResult",
         "type": "object"
       },
+      "SuccessResponse_BloomRebuildResult_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BloomRebuildResult"
+          },
+          "success": {
+            "default": true,
+            "description": "Always true.",
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[BloomRebuildResult]",
+        "type": "object"
+      },
+      "SuccessResponse_BloomStats_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BloomStats"
+          },
+          "success": {
+            "default": true,
+            "description": "Always true.",
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[BloomStats]",
+        "type": "object"
+      },
       "SuccessResponse_EffectiveSettings_": {
         "properties": {
           "data": {
@@ -431,6 +557,50 @@
         "summary": "Readiness probe",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/v1/admin/bloom/rebuild": {
+      "post": {
+        "description": "Rebuild the Bloom filter from all live products in Postgres.\n\nThis is the recovery mechanism for the deletion problem: a Bloom filter\ncannot remove keys, so deleted products remain as false positives until the\nfilter is rebuilt. This endpoint measures and returns the rebuild cost.\n\n**Warning:** This operation blocks while reading every product ID from\nPostgres. On a 1M-row table the rebuild takes ~1-2 seconds. During rebuild\nthe filter continues serving lookups from its old state, so traffic is not\naffected, but the operation consumes a database connection for its duration.\n\nArgs:\n    session: Injected database session.\n\nReturns:\n    Rebuild statistics (count, duration), wrapped in the standard success\n    envelope.",
+        "operationId": "rebuild_bloom_v1_admin_bloom_rebuild_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_BloomRebuildResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rebuild the Bloom filter from Postgres",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/bloom/stats": {
+      "get": {
+        "description": "Return current Bloom filter statistics.\n\nIncludes capacity, saturation, target and measured false positive rates,\nand lookup counts. Used by the dashboard to display filter health.\n\nReturns:\n    Bloom filter stats, wrapped in the standard success envelope.",
+        "operationId": "bloom_stats_v1_admin_bloom_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_BloomStats_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Current Bloom filter statistics",
+        "tags": [
+          "admin"
         ]
       }
     },
