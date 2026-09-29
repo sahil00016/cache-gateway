@@ -16,6 +16,7 @@ from src.core.logging import configure_logging
 from src.db.engine import dispose_engine, get_engine, init_engine
 from src.db.redis import dispose_redis, init_redis
 from src.service.bloom import init_bloom_filter
+from src.service.coalescer import init_coalescer
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "Bloom filter built from database",
                 extra=stats,
             )
+
+    # Initialize request coalescer for stampede protection
+    init_coalescer()
+    logger.info(
+        "Request coalescer initialized",
+        extra={"enabled": settings.coalesce_enabled},
+    )
 
     try:
         yield

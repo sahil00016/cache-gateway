@@ -119,6 +119,12 @@ bloom_measured_fp_rate = Gauge(
     multiprocess_mode="livesum",
 )
 
+coalesced_requests_total = Counter(
+    "cache_gateway_coalesced_requests_total",
+    "Count of requests that waited on an in-flight leader (stampede protection).",
+    registry=REGISTRY,
+)
+
 
 def build_scrape_registry() -> CollectorRegistry:
     """Return the registry a scrape should render.

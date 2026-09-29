@@ -12,17 +12,26 @@ filter to determine if the ID might exist. If the filter says "definitely not",
 return 404 immediately without touching Redis or Postgres. See ADR-0003 for the
 Bloom vs null-caching comparison and the deletion problem.
 
+M6 adds request coalescing for stampede protection: when a hot key expires and
+many concurrent requests miss the cache, the first one becomes the leader and
+queries Postgres while the others wait for its result. Without this, N concurrent
+requests = N duplicate queries. With it: 1 query per worker (still up to 4
+duplicates with 4 workers, not 1 -- this is measured). See ADR-0005 for the
+hand-built coalescer implementation and the per-worker limitation.
+
 :meth:`get_many` stays uncached. Caching it now would blur two different
 things this project measures separately: the ordinary hit-rate win here, and
 the thundering-herd behaviour a batch of cold keys produces, which is M6's
 subject and needs an uncached baseline of its own.
 """
 
+from src.common.settings import get_settings
 from src.core.exceptions import NotFoundError
 from src.repository.product import ProductRepository
 from src.repository.product_cache import ProductCacheRepository
 from src.schema.product import ProductRead
 from src.service.bloom import get_bloom_filter
+from src.service.coalescer import get_coalescer
 
 
 class ProductService:
@@ -44,7 +53,9 @@ class ProductService:
         Read path with all protections (M4 onwards):
         1. Bloom filter: if definitely not present, 404 immediately
         2. Redis cache: if hit, return
-        3. Postgres: query and populate cache
+        3. Request coalescing (M6): if another request is already loading this
+           key, wait for its result instead of issuing a duplicate query
+        4. Postgres: query and populate cache
 
         Args:
             product_id: The product's id.
@@ -70,7 +81,33 @@ class ProductService:
         if cached is not None:
             return cached
 
-        # Fall through to Postgres
+        # M6: Request coalescing for stampede protection
+        # If coalescing is enabled, multiple concurrent requests for the same ID
+        # will coalesce into one DB query. If disabled, every request hits the DB.
+        settings = get_settings()
+        if settings.coalesce_enabled:
+            coalescer = get_coalescer()
+            cache_key = str(product_id)
+            return await coalescer.coalesce(cache_key, lambda: self._load_and_cache(product_id))
+        return await self._load_and_cache(product_id)
+
+    async def _load_and_cache(self, product_id: int) -> ProductRead:
+        """Load a product from Postgres and populate the cache.
+
+        This is the expensive operation that the coalescer deduplicates.
+
+        Args:
+            product_id: The product's id.
+
+        Returns:
+            The product.
+
+        Raises:
+            NotFoundError: If no live product has that id.
+        """
+        bloom = get_bloom_filter()
+
+        # Query Postgres
         product = await self._repository.get_by_id(product_id)
         if product is None:
             # Bloom filter said "might exist" but Postgres says no. This is a
@@ -87,6 +124,8 @@ class ProductService:
             )
 
         result = ProductRead.model_validate(product)
+
+        # Populate cache (fail-open: if cache write fails, the request still succeeds)
         await self._cache.set(product_id, result)
 
         # M4: Ensure the key is in the Bloom filter. Normally it should already
