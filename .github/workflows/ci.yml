@@ -155,11 +155,16 @@ jobs:
       - name: Image starts and answers liveness
         # Building is not proof the image runs. This catches a missing runtime
         # library or a bad CMD, which a build alone will not.
+        #
+        # Bloom filter disabled for the smoke test: the filter builds from Postgres
+        # at startup, but this test deliberately uses a dummy DATABASE_URL to prove
+        # the container image itself is valid. M4+ requires BLOOM_ENABLED=false here.
         run: |
           docker run -d --name cg -p 8000:8000 \
             -e DATABASE_URL='postgresql+asyncpg://u:p@localhost:5432/d' \
             -e REDIS_URL='redis://localhost:6379/0' \
             -e WEB_CONCURRENCY=1 \
+            -e BLOOM_ENABLED=false \
             cache-gateway:ci
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:8000/healthz; then echo "\nliveness OK"; exit 0; fi
