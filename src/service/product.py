@@ -29,7 +29,7 @@ from src.common.settings import get_settings
 from src.core.exceptions import NotFoundError
 from src.repository.product import ProductRepository
 from src.repository.product_cache import ProductCacheRepository
-from src.schema.product import ProductRead
+from src.schema.product import ProductRead, ProductUpdate
 from src.service.bloom import get_bloom_filter
 from src.service.coalescer import get_coalescer
 
@@ -150,3 +150,67 @@ class ProductService:
         """
         products = await self._repository.get_many_by_id(product_ids)
         return [ProductRead.model_validate(product) for product in products]
+
+    async def update(self, product_id: int, update_data: ProductUpdate) -> ProductRead:
+        """Update a product and invalidate its cache entry.
+
+        M7: Cache-aside with delete-on-write. Write to the source of truth
+        (Postgres) first, then invalidate the cache. The next read will fetch
+        the updated value.
+
+        Why delete instead of update? Updating the cache creates a write-write
+        race: if two updates happen concurrently, the cache could end up with
+        the older value. Delete is atomic and safer. See ADR-0006.
+
+        Args:
+            product_id: The product's id.
+            update_data: Fields to update.
+
+        Returns:
+            The updated product.
+
+        Raises:
+            NotFoundError: If no live product has that id.
+        """
+        # Filter out None values - only update provided fields
+        fields = update_data.model_dump(exclude_unset=True)
+
+        # Write to Postgres first (source of truth)
+        product = await self._repository.update_by_id(product_id, **fields)
+        if product is None:
+            raise NotFoundError(
+                f"No product with id {product_id}.",
+                details={"product_id": product_id},
+            )
+
+        # Invalidate cache (fail-open: write already succeeded)
+        await self._cache.delete(product_id)
+
+        return ProductRead.model_validate(product)
+
+    async def delete(self, product_id: int) -> None:
+        """Soft delete a product and invalidate its cache entry.
+
+        M7: Cache-aside with delete-on-write. The Bloom filter cannot remove
+        keys, so a deleted product becomes a false positive until rebuild. This
+        limitation is measured, not hidden - see the module docstring and ADR-0003.
+
+        Args:
+            product_id: The product's id.
+
+        Raises:
+            NotFoundError: If no live product has that id.
+        """
+        # Soft delete in Postgres first (source of truth)
+        product = await self._repository.soft_delete_by_id(product_id)
+        if product is None:
+            raise NotFoundError(
+                f"No product with id {product_id}.",
+                details={"product_id": product_id},
+            )
+
+        # Invalidate cache (fail-open: write already succeeded)
+        await self._cache.delete(product_id)
+
+        # Note: Bloom filter cannot remove the key. It becomes a false positive
+        # until rebuild. This is the measured trade-off of using a Bloom filter.
