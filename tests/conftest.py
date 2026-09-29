@@ -13,6 +13,7 @@ import pytest
 from src.common.settings import Settings, get_settings
 from src.main import create_app
 from src.service.bloom import init_bloom_filter
+from src.service.coalescer import init_coalescer
 
 _TEST_ENV = {
     "APP_NAME": "cache-gateway-test",
@@ -47,6 +48,9 @@ def _test_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         fp_rate=0.01,
         enabled=False,
     )
+
+    # Initialize request coalescer for tests
+    init_coalescer()
 
     yield
 
