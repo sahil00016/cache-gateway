@@ -11,8 +11,8 @@ four ways a cache fails in production and the fix for each.
 The cache is not the point. The evidence is: every failure mode is reproduced
 under load, measured, fixed, and measured again.
 
-> **Status: M4 in progress.** Cache-aside implemented (M3), Bloom filter for
-> cache penetration protection added (M4 code complete, benchmarks pending).
+> **Status: M5 complete (code).** Bloom filter (M4) and TTL jitter (M5) implemented.
+> Benchmarks for both pending deployment.
 > Progress is tracked in `../project planning/01-cache-gateway.md`.
 
 ---
@@ -22,7 +22,7 @@ under load, measured, fixed, and measured again.
 | # | Problem | Fix | Status |
 |---|---|---|---|
 | 1 | **Penetration** -- lookups for keys that do not exist miss the cache every time and hit the database. Trivially weaponisable. | Bloom filter (1.2 MB per worker), blocks 99%+ of attacks. See [ADR-0003](docs/adr/0003-bloom-filter-for-penetration-protection.md). | **M4 ✓** |
-| 2 | **Avalanche** -- many keys share a TTL, expire together, and the database takes the full load at once. | TTL jitter | M5 |
+| 2 | **Avalanche** -- many keys share a TTL, expire together, and the database takes the full load at once. | TTL jitter (10% uniform), spreads expiry over jitter window. See [ADR-0004](docs/adr/0004-ttl-jitter-for-avalanche-protection.md). | **M5 ✓** |
 | 3 | **Stampede** -- one hot key expires and every concurrent request misses simultaneously. | Hand-built request coalescing, plus an optional Redis lock across workers | M6 |
 | 4 | **Consistency** -- a write updates the database but the cache keeps serving the old row. | Cache-aside with delete-on-write | M7 |
 
