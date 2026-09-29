@@ -46,6 +46,89 @@
         "title": "DependencyStatus",
         "type": "object"
       },
+      "EffectiveSettings": {
+        "description": "Configuration as the running process actually loaded it.\n\nExists because of ADR-0002: an environment variable name that does not\nmatch a declared field is silently ignored rather than rejected, so a\ntypo produces a plausible-looking benchmark of the wrong configuration.\nThis is read back from the live :class:`~src.common.settings.Settings`\ninstance, never assumed from what an operator meant to set.\n\nDeliberately excludes ``database_url`` and ``redis_url`` -- both carry\ncredentials, and neither affects how a benchmark result should be read.",
+        "properties": {
+          "bloom_enabled": {
+            "title": "Bloom Enabled",
+            "type": "boolean"
+          },
+          "bloom_expected_items": {
+            "title": "Bloom Expected Items",
+            "type": "integer"
+          },
+          "bloom_fp_rate": {
+            "title": "Bloom Fp Rate",
+            "type": "number"
+          },
+          "cache_key_prefix": {
+            "description": "Cache key namespace, including its version.",
+            "title": "Cache Key Prefix",
+            "type": "string"
+          },
+          "cache_ttl_jitter_pct": {
+            "description": "Jitter as a percentage of the base TTL.",
+            "title": "Cache Ttl Jitter Pct",
+            "type": "integer"
+          },
+          "cache_ttl_jitter_seconds": {
+            "description": "Jitter ceiling, in seconds.",
+            "title": "Cache Ttl Jitter Seconds",
+            "type": "number"
+          },
+          "cache_ttl_seconds": {
+            "description": "Base TTL for a cached product.",
+            "title": "Cache Ttl Seconds",
+            "type": "integer"
+          },
+          "coalesce_enabled": {
+            "description": "In-process request coalescing.",
+            "title": "Coalesce Enabled",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Deployment environment.",
+            "title": "Environment",
+            "type": "string"
+          },
+          "redis_lock_enabled": {
+            "description": "Cross-worker stampede lock.",
+            "title": "Redis Lock Enabled",
+            "type": "boolean"
+          },
+          "redis_lock_ttl_ms": {
+            "title": "Redis Lock Ttl Ms",
+            "type": "integer"
+          },
+          "web_concurrency": {
+            "description": "Worker count. Bounds what per-process protections can guarantee.",
+            "title": "Web Concurrency",
+            "type": "integer"
+          },
+          "write_strategy": {
+            "description": "How writes reconcile the cache with Postgres.",
+            "title": "Write Strategy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment",
+          "web_concurrency",
+          "write_strategy",
+          "cache_ttl_seconds",
+          "cache_ttl_jitter_pct",
+          "cache_ttl_jitter_seconds",
+          "cache_key_prefix",
+          "bloom_enabled",
+          "bloom_expected_items",
+          "bloom_fp_rate",
+          "coalesce_enabled",
+          "redis_lock_enabled",
+          "redis_lock_ttl_ms"
+        ],
+        "title": "EffectiveSettings",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -218,6 +301,24 @@
         "title": "ReadinessResult",
         "type": "object"
       },
+      "SuccessResponse_EffectiveSettings_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EffectiveSettings"
+          },
+          "success": {
+            "default": true,
+            "description": "Always true.",
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[EffectiveSettings]",
+        "type": "object"
+      },
       "SuccessResponse_ProductRead_": {
         "properties": {
           "data": {
@@ -330,6 +431,28 @@
         "summary": "Readiness probe",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/v1/admin/stats": {
+      "get": {
+        "description": "Return the configuration this process actually loaded.\n\nArgs:\n    settings: Injected application settings.\n\nReturns:\n    The effective settings, wrapped in the standard success envelope.",
+        "operationId": "stats_v1_admin_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_EffectiveSettings_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Effective configuration of the running process",
+        "tags": [
+          "admin"
         ]
       }
     },

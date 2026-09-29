@@ -57,7 +57,7 @@ http_request_duration_seconds = Histogram(
 cache_operations_total = Counter(
     "cache_gateway_cache_operations_total",
     "Cache lookups by outcome.",
-    labelnames=("outcome",),  # hit | miss | bloom_reject | coalesced
+    labelnames=("outcome",),  # hit | miss | error | bloom_reject | coalesced
     registry=REGISTRY,
 )
 

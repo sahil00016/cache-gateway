@@ -17,6 +17,7 @@ is impossible to recover six months later.
 | 0006 | Cache-aside with delete-on-write | Pending (M7) |
 | [0007](0007-metrics-under-multiple-workers.md) | Metrics must aggregate across gunicorn workers | Accepted |
 | [0008](0008-benchmark-harness-correctness.md) | The benchmark harness is part of the system under test | Accepted |
+| [0009](0009-cache-adds-round-trip-latency.md) | Cache-aside made tail latency worse, not better | Accepted |
 
 ## Template
 
