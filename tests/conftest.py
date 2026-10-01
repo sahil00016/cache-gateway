@@ -12,6 +12,8 @@ import pytest
 
 from src.common.settings import Settings, get_settings
 from src.main import create_app
+from src.service.bloom import init_bloom_filter
+from src.service.coalescer import init_coalescer
 
 _TEST_ENV = {
     "APP_NAME": "cache-gateway-test",
@@ -37,7 +39,23 @@ def _test_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     # locally and fails in CI (or worse, the reverse).
     monkeypatch.setitem(Settings.model_config, "env_file", None)
     get_settings.cache_clear()
+
+    # Initialize a disabled Bloom filter for tests. Disabled so unit tests don't
+    # need to populate it. Integration tests that want to test the filter
+    # specifically can initialize their own enabled instance.
+    bloom = init_bloom_filter(
+        expected_items=1000,
+        fp_rate=0.01,
+        enabled=False,
+    )
+
+    # Initialize request coalescer for tests
+    init_coalescer()
+
     yield
+
+    # Clean up the Bloom filter
+    bloom.close()
     get_settings.cache_clear()
 
 

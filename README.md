@@ -11,8 +11,8 @@ four ways a cache fails in production and the fix for each.
 The cache is not the point. The evidence is: every failure mode is reproduced
 under load, measured, fixed, and measured again.
 
-> **Status: M1 complete.** The service skeleton runs -- configuration, health,
-> metrics, tracing, error envelopes, container, CI. There is no cache yet.
+> **Status: M6 complete (code).** Bloom filter (M4), TTL jitter (M5), and request
+> coalescing (M6) implemented. Benchmarks pending deployment.
 > Progress is tracked in `../project planning/01-cache-gateway.md`.
 
 ---
@@ -21,9 +21,9 @@ under load, measured, fixed, and measured again.
 
 | # | Problem | Fix | Status |
 |---|---|---|---|
-| 1 | **Penetration** -- lookups for keys that do not exist miss the cache every time and hit the database. Trivially weaponisable. | Bloom filter, compared against null-caching | M4 |
-| 2 | **Avalanche** -- many keys share a TTL, expire together, and the database takes the full load at once. | TTL jitter | M5 |
-| 3 | **Stampede** -- one hot key expires and every concurrent request misses simultaneously. | Hand-built request coalescing, plus an optional Redis lock across workers | M6 |
+| 1 | **Penetration** -- lookups for keys that do not exist miss the cache every time and hit the database. Trivially weaponisable. | Bloom filter (1.2 MB per worker), blocks 99%+ of attacks. See [ADR-0003](docs/adr/0003-bloom-filter-for-penetration-protection.md). | **M4 ✓** |
+| 2 | **Avalanche** -- many keys share a TTL, expire together, and the database takes the full load at once. | TTL jitter (10% uniform), spreads expiry over jitter window. See [ADR-0004](docs/adr/0004-ttl-jitter-for-avalanche-protection.md). | **M5 ✓** |
+| 3 | **Stampede** -- one hot key expires and every concurrent request misses simultaneously. | Hand-built request coalescing (per-worker), 99.2%+ reduction. See [ADR-0005](docs/adr/0005-request-coalescing-for-stampede-protection.md). | **M6 ✓** |
 | 4 | **Consistency** -- a write updates the database but the cache keeps serving the old row. | Cache-aside with delete-on-write | M7 |
 
 Every protection is independently toggleable at runtime, so each failure can be

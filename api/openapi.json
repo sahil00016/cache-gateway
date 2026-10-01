@@ -1,6 +1,96 @@
 {
   "components": {
     "schemas": {
+      "BloomRebuildResult": {
+        "description": "Result of rebuilding the Bloom filter from Postgres.\n\nThe rebuild duration is the measured cost of recovering from the deletion\nproblem. This number appears in ADR-0003 and the README.",
+        "properties": {
+          "count": {
+            "description": "Count of product IDs loaded into the filter.",
+            "title": "Count",
+            "type": "integer"
+          },
+          "duration_seconds": {
+            "description": "Time spent rebuilding, in seconds.",
+            "title": "Duration Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "count",
+          "duration_seconds"
+        ],
+        "title": "BloomRebuildResult",
+        "type": "object"
+      },
+      "BloomStats": {
+        "description": "Current Bloom filter statistics.\n\nUsed by the dashboard to display filter health and the measured false\npositive rate vs. the predicted rate.",
+        "properties": {
+          "enabled": {
+            "description": "Whether penetration protection is active.",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expected_items": {
+            "description": "The n in the sizing formula.",
+            "title": "Expected Items",
+            "type": "integer"
+          },
+          "false_positives": {
+            "description": "Count of lookups that said 'might exist' but Postgres said no.",
+            "title": "False Positives",
+            "type": "integer"
+          },
+          "items_added": {
+            "description": "Count of keys added to the filter.",
+            "title": "Items Added",
+            "type": "integer"
+          },
+          "k_hashes": {
+            "description": "Count of hash functions.",
+            "title": "K Hashes",
+            "type": "integer"
+          },
+          "m_bits": {
+            "description": "Filter size in bits.",
+            "title": "M Bits",
+            "type": "integer"
+          },
+          "measured_fp_rate": {
+            "description": "Empirical false positive rate from observed lookups.",
+            "title": "Measured Fp Rate",
+            "type": "number"
+          },
+          "saturation": {
+            "description": "Fraction of capacity in use (items_added / expected_items).",
+            "title": "Saturation",
+            "type": "number"
+          },
+          "target_fp_rate": {
+            "description": "The p in the sizing formula.",
+            "title": "Target Fp Rate",
+            "type": "number"
+          },
+          "total_lookups": {
+            "description": "Count of filter queries since startup or rebuild.",
+            "title": "Total Lookups",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "expected_items",
+          "items_added",
+          "saturation",
+          "target_fp_rate",
+          "measured_fp_rate",
+          "total_lookups",
+          "false_positives",
+          "m_bits",
+          "k_hashes"
+        ],
+        "title": "BloomStats",
+        "type": "object"
+      },
       "DependencyStatus": {
         "description": "Reachability of a single dependency.",
         "properties": {
@@ -44,6 +134,89 @@
           "healthy"
         ],
         "title": "DependencyStatus",
+        "type": "object"
+      },
+      "EffectiveSettings": {
+        "description": "Configuration as the running process actually loaded it.\n\nExists because of ADR-0002: an environment variable name that does not\nmatch a declared field is silently ignored rather than rejected, so a\ntypo produces a plausible-looking benchmark of the wrong configuration.\nThis is read back from the live :class:`~src.common.settings.Settings`\ninstance, never assumed from what an operator meant to set.\n\nDeliberately excludes ``database_url`` and ``redis_url`` -- both carry\ncredentials, and neither affects how a benchmark result should be read.",
+        "properties": {
+          "bloom_enabled": {
+            "title": "Bloom Enabled",
+            "type": "boolean"
+          },
+          "bloom_expected_items": {
+            "title": "Bloom Expected Items",
+            "type": "integer"
+          },
+          "bloom_fp_rate": {
+            "title": "Bloom Fp Rate",
+            "type": "number"
+          },
+          "cache_key_prefix": {
+            "description": "Cache key namespace, including its version.",
+            "title": "Cache Key Prefix",
+            "type": "string"
+          },
+          "cache_ttl_jitter_pct": {
+            "description": "Jitter as a percentage of the base TTL.",
+            "title": "Cache Ttl Jitter Pct",
+            "type": "integer"
+          },
+          "cache_ttl_jitter_seconds": {
+            "description": "Jitter ceiling, in seconds.",
+            "title": "Cache Ttl Jitter Seconds",
+            "type": "number"
+          },
+          "cache_ttl_seconds": {
+            "description": "Base TTL for a cached product.",
+            "title": "Cache Ttl Seconds",
+            "type": "integer"
+          },
+          "coalesce_enabled": {
+            "description": "In-process request coalescing.",
+            "title": "Coalesce Enabled",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Deployment environment.",
+            "title": "Environment",
+            "type": "string"
+          },
+          "redis_lock_enabled": {
+            "description": "Cross-worker stampede lock.",
+            "title": "Redis Lock Enabled",
+            "type": "boolean"
+          },
+          "redis_lock_ttl_ms": {
+            "title": "Redis Lock Ttl Ms",
+            "type": "integer"
+          },
+          "web_concurrency": {
+            "description": "Worker count. Bounds what per-process protections can guarantee.",
+            "title": "Web Concurrency",
+            "type": "integer"
+          },
+          "write_strategy": {
+            "description": "How writes reconcile the cache with Postgres.",
+            "title": "Write Strategy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment",
+          "web_concurrency",
+          "write_strategy",
+          "cache_ttl_seconds",
+          "cache_ttl_jitter_pct",
+          "cache_ttl_jitter_seconds",
+          "cache_key_prefix",
+          "bloom_enabled",
+          "bloom_expected_items",
+          "bloom_fp_rate",
+          "coalesce_enabled",
+          "redis_lock_enabled",
+          "redis_lock_ttl_ms"
+        ],
+        "title": "EffectiveSettings",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -195,6 +368,75 @@
         "title": "ProductRead",
         "type": "object"
       },
+      "ProductUpdate": {
+        "description": "Fields accepted when updating a product.",
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "price_cents": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Cents"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku"
+          }
+        },
+        "title": "ProductUpdate",
+        "type": "object"
+      },
       "ReadinessResult": {
         "description": "Result of a readiness probe across every dependency.",
         "properties": {
@@ -216,6 +458,60 @@
           "dependencies"
         ],
         "title": "ReadinessResult",
+        "type": "object"
+      },
+      "SuccessResponse_BloomRebuildResult_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BloomRebuildResult"
+          },
+          "success": {
+            "default": true,
+            "description": "Always true.",
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[BloomRebuildResult]",
+        "type": "object"
+      },
+      "SuccessResponse_BloomStats_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BloomStats"
+          },
+          "success": {
+            "default": true,
+            "description": "Always true.",
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[BloomStats]",
+        "type": "object"
+      },
+      "SuccessResponse_EffectiveSettings_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EffectiveSettings"
+          },
+          "success": {
+            "default": true,
+            "description": "Always true.",
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[EffectiveSettings]",
         "type": "object"
       },
       "SuccessResponse_ProductRead_": {
@@ -333,6 +629,72 @@
         ]
       }
     },
+    "/v1/admin/bloom/rebuild": {
+      "post": {
+        "description": "Rebuild the Bloom filter from all live products in Postgres.\n\nThis is the recovery mechanism for the deletion problem: a Bloom filter\ncannot remove keys, so deleted products remain as false positives until the\nfilter is rebuilt. This endpoint measures and returns the rebuild cost.\n\n**Warning:** This operation blocks while reading every product ID from\nPostgres. On a 1M-row table the rebuild takes ~1-2 seconds. During rebuild\nthe filter continues serving lookups from its old state, so traffic is not\naffected, but the operation consumes a database connection for its duration.\n\nArgs:\n    session: Injected database session.\n\nReturns:\n    Rebuild statistics (count, duration), wrapped in the standard success\n    envelope.",
+        "operationId": "rebuild_bloom_v1_admin_bloom_rebuild_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_BloomRebuildResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rebuild the Bloom filter from Postgres",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/bloom/stats": {
+      "get": {
+        "description": "Return current Bloom filter statistics.\n\nIncludes capacity, saturation, target and measured false positive rates,\nand lookup counts. Used by the dashboard to display filter health.\n\nReturns:\n    Bloom filter stats, wrapped in the standard success envelope.",
+        "operationId": "bloom_stats_v1_admin_bloom_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_BloomStats_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Current Bloom filter statistics",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/stats": {
+      "get": {
+        "description": "Return the configuration this process actually loaded.\n\nArgs:\n    settings: Injected application settings.\n\nReturns:\n    The effective settings, wrapped in the standard success envelope.",
+        "operationId": "stats_v1_admin_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_EffectiveSettings_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Effective configuration of the running process",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/products": {
       "get": {
         "description": "Return several products in one request.\n\nExists mainly to expose stampede behaviour more sharply than the single\nread can: one request can miss on many keys at once.\n\nArgs:\n    service: Injected product service.\n    ids: Product ids to fetch, capped to keep one request from becoming a\n        denial-of-service vector against the database.\n\nReturns:\n    The products that were found. Missing ids are omitted, not errors.",
@@ -384,6 +746,43 @@
       }
     },
     "/v1/products/{product_id}": {
+      "delete": {
+        "description": "Soft delete a product and invalidate its cache entry.\n\nM7: Cache-aside with delete-on-write. The Bloom filter cannot remove keys,\nso a deleted product becomes a false positive until rebuild. This trade-off\nis measured in the benchmarks. See ADR-0003 and ADR-0006.\n\nArgs:\n    product_id: The product's id.\n    service: Injected product service.",
+        "operationId": "delete_product_v1_products__product_id__delete",
+        "parameters": [
+          {
+            "description": "Product id.",
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "description": "Product id.",
+              "minimum": 1,
+              "title": "Product Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete a product",
+        "tags": [
+          "products"
+        ]
+      },
       "get": {
         "description": "Return a single product.\n\nArgs:\n    product_id: The product's id.\n    service: Injected product service.\n\nReturns:\n    The product, wrapped in the standard success envelope.",
         "operationId": "get_product_v1_products__product_id__get",
@@ -424,6 +823,60 @@
           }
         },
         "summary": "Fetch one product by id",
+        "tags": [
+          "products"
+        ]
+      },
+      "put": {
+        "description": "Update a product and invalidate its cache entry.\n\nM7: Cache-aside with delete-on-write. After updating Postgres, the cache\nentry is deleted so the next read fetches the new value. See ADR-0006.\n\nArgs:\n    product_id: The product's id.\n    update_data: Fields to update (any omitted fields remain unchanged).\n    service: Injected product service.\n\nReturns:\n    The updated product, wrapped in the standard success envelope.",
+        "operationId": "update_product_v1_products__product_id__put",
+        "parameters": [
+          {
+            "description": "Product id.",
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "description": "Product id.",
+              "minimum": 1,
+              "title": "Product Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ProductRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update a product",
         "tags": [
           "products"
         ]

@@ -13,6 +13,7 @@ alembic
 
 redis
 httpx
+pybloomfiltermmap3
 
 python-json-logger
 prometheus-client
