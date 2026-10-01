@@ -368,6 +368,75 @@
         "title": "ProductRead",
         "type": "object"
       },
+      "ProductUpdate": {
+        "description": "Fields accepted when updating a product.",
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "price_cents": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Cents"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sku"
+          }
+        },
+        "title": "ProductUpdate",
+        "type": "object"
+      },
       "ReadinessResult": {
         "description": "Result of a readiness probe across every dependency.",
         "properties": {
@@ -677,6 +746,43 @@
       }
     },
     "/v1/products/{product_id}": {
+      "delete": {
+        "description": "Soft delete a product and invalidate its cache entry.\n\nM7: Cache-aside with delete-on-write. The Bloom filter cannot remove keys,\nso a deleted product becomes a false positive until rebuild. This trade-off\nis measured in the benchmarks. See ADR-0003 and ADR-0006.\n\nArgs:\n    product_id: The product's id.\n    service: Injected product service.",
+        "operationId": "delete_product_v1_products__product_id__delete",
+        "parameters": [
+          {
+            "description": "Product id.",
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "description": "Product id.",
+              "minimum": 1,
+              "title": "Product Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete a product",
+        "tags": [
+          "products"
+        ]
+      },
       "get": {
         "description": "Return a single product.\n\nArgs:\n    product_id: The product's id.\n    service: Injected product service.\n\nReturns:\n    The product, wrapped in the standard success envelope.",
         "operationId": "get_product_v1_products__product_id__get",
@@ -717,6 +823,60 @@
           }
         },
         "summary": "Fetch one product by id",
+        "tags": [
+          "products"
+        ]
+      },
+      "put": {
+        "description": "Update a product and invalidate its cache entry.\n\nM7: Cache-aside with delete-on-write. After updating Postgres, the cache\nentry is deleted so the next read fetches the new value. See ADR-0006.\n\nArgs:\n    product_id: The product's id.\n    update_data: Fields to update (any omitted fields remain unchanged).\n    service: Injected product service.\n\nReturns:\n    The updated product, wrapped in the standard success envelope.",
+        "operationId": "update_product_v1_products__product_id__put",
+        "parameters": [
+          {
+            "description": "Product id.",
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "description": "Product id.",
+              "minimum": 1,
+              "title": "Product Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ProductRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update a product",
         "tags": [
           "products"
         ]

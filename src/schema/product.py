@@ -28,3 +28,13 @@ class ProductWrite(BaseModel):
     description: str | None = None
     price_cents: int = Field(ge=0)
     category: str = Field(min_length=1, max_length=64)
+
+
+class ProductUpdate(BaseModel):
+    """Fields accepted when updating a product."""
+
+    sku: str | None = Field(None, min_length=1, max_length=32)
+    name: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = None
+    price_cents: int | None = Field(None, ge=0)
+    category: str | None = Field(None, min_length=1, max_length=64)

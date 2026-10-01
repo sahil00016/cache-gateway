@@ -109,3 +109,21 @@ class ProductCacheRepository:
             # The request already has its answer from Postgres; a failed
             # write just means the next request pays the same query.
             logger.warning("cache_write_failed", extra={"product_id": product_id})
+
+    async def delete(self, product_id: int) -> None:
+        """Invalidate a cached product after a write.
+
+        M7: Cache-aside with delete-on-write. After updating or deleting a
+        product in Postgres, the cache entry is removed so the next read
+        fetches the new value. This is simpler and safer than updating the
+        cache entry, which creates a write-write race. See ADR-0006.
+
+        Args:
+            product_id: The product's id.
+        """
+        try:
+            await self._redis.delete(self._key(product_id))
+        except RedisError:
+            # A failed invalidation leaves stale data in cache until TTL.
+            # Not ideal, but better than blocking the write.
+            logger.warning("cache_invalidation_failed", extra={"product_id": product_id})
