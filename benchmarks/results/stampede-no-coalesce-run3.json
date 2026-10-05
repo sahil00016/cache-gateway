@@ -1,0 +1,26 @@
+{
+  "scenario": "stampede-no-coalesce",
+  "run": 3,
+  "recorded_at": "2026-10-05T11:03:34.185Z",
+  "config": {
+    "base_url": "http://localhost:8010",
+    "hot_key": 42,
+    "ttl_seconds": 5,
+    "concurrent_vus": 200,
+    "duration": "60s",
+    "expected_expiry_events": 12
+  },
+  "results": {
+    "requests": 7638,
+    "rps": 126,
+    "error_rate": 0,
+    "latency_ms": {
+      "avg": 1579.67,
+      "med": 1436.35,
+      "p95": 2666.36,
+      "p99": 3358.81,
+      "max": 6802.09
+    }
+  },
+  "note": "Duplicate query count is the headline and comes from cache_gateway_database_queries_total in the companion *-metrics.json, not from k6."
+}

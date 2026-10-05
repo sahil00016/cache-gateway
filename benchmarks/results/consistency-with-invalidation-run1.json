@@ -1,0 +1,50 @@
+{
+  "scenario": "consistency-with-invalidation",
+  "run": 1,
+  "recorded_at": "2026-10-05T09:48:10.196Z",
+  "config": {
+    "base_url": "http://localhost:8010",
+    "duration": "60s",
+    "hot_keys": 100,
+    "stale_threshold_ms": 1000,
+    "readers": 50,
+    "writers": 50
+  },
+  "results": {
+    "rps": 695.1,
+    "error_rate": 0,
+    "latency_ms": {
+      "avg": 43.01,
+      "med": 31.53,
+      "p95": 110.44,
+      "p99": 215.71,
+      "max": 1081.07
+    },
+    "reads": {
+      "total": 21513,
+      "dated": 21513,
+      "unwritten": 0,
+      "stale": 4233,
+      "stale_pct": 19.68,
+      "value_age_ms": {
+        "avg": 891.87,
+        "med": 455,
+        "p95": 1854,
+        "p99": 24206.92,
+        "max": 31284
+      }
+    },
+    "read_after_write": {
+      "writes": 10247,
+      "stale_readbacks": 141,
+      "stale_pct": 1.376,
+      "time_to_fresh_ms": {
+        "avg": 93.92,
+        "med": 76,
+        "p95": 205,
+        "p99": 468.95,
+        "max": 1135
+      }
+    }
+  }
+}

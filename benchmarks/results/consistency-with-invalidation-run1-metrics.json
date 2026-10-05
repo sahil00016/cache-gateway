@@ -1,0 +1,551 @@
+{
+  "arm": "consistency-with-invalidation",
+  "run": 1,
+  "recorded_at": "2026-10-05T15:18:13+0530",
+  "k6_exit_code": 0,
+  "duration_s": 61.03,
+  "effective_settings": {
+    "environment": "local",
+    "web_concurrency": 4,
+    "write_strategy": "cache_aside",
+    "cache_invalidate_on_write": true,
+    "cache_ttl_seconds": 60,
+    "cache_ttl_jitter_pct": 10,
+    "cache_ttl_jitter_seconds": 6.0,
+    "cache_key_prefix": "product:v1",
+    "bloom_enabled": true,
+    "bloom_expected_items": 1000000,
+    "bloom_fp_rate": 0.01,
+    "coalesce_enabled": true,
+    "redis_lock_enabled": false,
+    "redis_lock_ttl_ms": 5000
+  },
+  "service_env": {
+    "BENCH_CACHE_INVALIDATE_ON_WRITE": "true",
+    "BENCH_CACHE_TTL_SECONDS": "60"
+  },
+  "windows": {
+    "measured": {
+      "window_s": 58.01,
+      "samples": 59,
+      "totals": {
+        "cache_gateway_coalesced_requests_total": 345.0,
+        "cache_gateway_bloom_queries_total{result=\"hit\"}": 31383.0,
+        "cache_gateway_cache_operations_total{outcome=\"miss\"}": 10373.0,
+        "cache_gateway_cache_operations_total{outcome=\"hit\"}": 21010.0,
+        "cache_gateway_database_queries_total{operation=\"get_by_id\"}": 10028.0,
+        "cache_gateway_database_queries_total{operation=\"update_by_id\"}": 10110.0
+      },
+      "db_queries": 20138.0,
+      "db_qps": 347.2
+    }
+  },
+  "db_qps_series": [
+    {
+      "t": -1.0,
+      "rate": 0.0
+    },
+    {
+      "t": -0.0,
+      "rate": 0.0
+    },
+    {
+      "t": 1.0,
+      "rate": 119.0
+    },
+    {
+      "t": 2.0,
+      "rate": 304.0
+    },
+    {
+      "t": 3.0,
+      "rate": 400.0
+    },
+    {
+      "t": 4.0,
+      "rate": 391.0
+    },
+    {
+      "t": 5.0,
+      "rate": 382.0
+    },
+    {
+      "t": 6.0,
+      "rate": 358.0
+    },
+    {
+      "t": 7.0,
+      "rate": 360.0
+    },
+    {
+      "t": 8.0,
+      "rate": 371.0
+    },
+    {
+      "t": 9.0,
+      "rate": 369.0
+    },
+    {
+      "t": 10.0,
+      "rate": 358.0
+    },
+    {
+      "t": 11.0,
+      "rate": 372.0
+    },
+    {
+      "t": 12.0,
+      "rate": 359.0
+    },
+    {
+      "t": 13.0,
+      "rate": 349.0
+    },
+    {
+      "t": 14.0,
+      "rate": 348.0
+    },
+    {
+      "t": 15.0,
+      "rate": 365.0
+    },
+    {
+      "t": 16.0,
+      "rate": 343.0
+    },
+    {
+      "t": 17.0,
+      "rate": 362.0
+    },
+    {
+      "t": 18.0,
+      "rate": 365.0
+    },
+    {
+      "t": 19.0,
+      "rate": 372.0
+    },
+    {
+      "t": 20.0,
+      "rate": 332.0
+    },
+    {
+      "t": 21.0,
+      "rate": 333.0
+    },
+    {
+      "t": 22.0,
+      "rate": 347.0
+    },
+    {
+      "t": 23.0,
+      "rate": 369.0
+    },
+    {
+      "t": 24.0,
+      "rate": 345.0
+    },
+    {
+      "t": 25.0,
+      "rate": 352.0
+    },
+    {
+      "t": 26.0,
+      "rate": 332.0
+    },
+    {
+      "t": 27.0,
+      "rate": 361.0
+    },
+    {
+      "t": 28.0,
+      "rate": 323.9
+    },
+    {
+      "t": 29.0,
+      "rate": 350.0
+    },
+    {
+      "t": 30.0,
+      "rate": 357.0
+    },
+    {
+      "t": 31.0,
+      "rate": 344.0
+    },
+    {
+      "t": 32.0,
+      "rate": 342.0
+    },
+    {
+      "t": 33.0,
+      "rate": 347.0
+    },
+    {
+      "t": 34.0,
+      "rate": 365.0
+    },
+    {
+      "t": 35.0,
+      "rate": 360.0
+    },
+    {
+      "t": 36.0,
+      "rate": 324.0
+    },
+    {
+      "t": 37.0,
+      "rate": 362.0
+    },
+    {
+      "t": 38.0,
+      "rate": 342.0
+    },
+    {
+      "t": 39.0,
+      "rate": 362.0
+    },
+    {
+      "t": 40.0,
+      "rate": 359.0
+    },
+    {
+      "t": 41.0,
+      "rate": 352.0
+    },
+    {
+      "t": 42.0,
+      "rate": 355.0
+    },
+    {
+      "t": 43.0,
+      "rate": 351.0
+    },
+    {
+      "t": 44.0,
+      "rate": 373.0
+    },
+    {
+      "t": 45.0,
+      "rate": 363.0
+    },
+    {
+      "t": 46.0,
+      "rate": 365.0
+    },
+    {
+      "t": 47.0,
+      "rate": 358.0
+    },
+    {
+      "t": 48.0,
+      "rate": 363.0
+    },
+    {
+      "t": 49.0,
+      "rate": 334.0
+    },
+    {
+      "t": 50.0,
+      "rate": 343.0
+    },
+    {
+      "t": 51.0,
+      "rate": 351.0
+    },
+    {
+      "t": 52.01,
+      "rate": 315.0
+    },
+    {
+      "t": 53.01,
+      "rate": 328.0
+    },
+    {
+      "t": 54.01,
+      "rate": 315.0
+    },
+    {
+      "t": 55.01,
+      "rate": 320.0
+    },
+    {
+      "t": 56.01,
+      "rate": 325.0
+    },
+    {
+      "t": 57.01,
+      "rate": 326.0
+    },
+    {
+      "t": 58.01,
+      "rate": 268.0
+    },
+    {
+      "t": 59.01,
+      "rate": 196.0
+    },
+    {
+      "t": 60.01,
+      "rate": 148.0
+    }
+  ],
+  "cache_ops_series": [
+    {
+      "t": -1.0,
+      "rate": 0.0
+    },
+    {
+      "t": -0.0,
+      "rate": 0.0
+    },
+    {
+      "t": 1.0,
+      "rate": 74.0
+    },
+    {
+      "t": 2.0,
+      "rate": 490.0
+    },
+    {
+      "t": 3.0,
+      "rate": 592.9
+    },
+    {
+      "t": 4.0,
+      "rate": 581.9
+    },
+    {
+      "t": 5.0,
+      "rate": 583.9
+    },
+    {
+      "t": 6.0,
+      "rate": 559.9
+    },
+    {
+      "t": 7.0,
+      "rate": 576.9
+    },
+    {
+      "t": 8.0,
+      "rate": 548.9
+    },
+    {
+      "t": 9.0,
+      "rate": 582.9
+    },
+    {
+      "t": 10.0,
+      "rate": 561.9
+    },
+    {
+      "t": 11.0,
+      "rate": 571.9
+    },
+    {
+      "t": 12.0,
+      "rate": 527.9
+    },
+    {
+      "t": 13.0,
+      "rate": 552.9
+    },
+    {
+      "t": 14.0,
+      "rate": 566.9
+    },
+    {
+      "t": 15.0,
+      "rate": 580.9
+    },
+    {
+      "t": 16.0,
+      "rate": 558.9
+    },
+    {
+      "t": 17.0,
+      "rate": 533.9
+    },
+    {
+      "t": 18.0,
+      "rate": 569.9
+    },
+    {
+      "t": 19.0,
+      "rate": 583.9
+    },
+    {
+      "t": 20.0,
+      "rate": 529.0
+    },
+    {
+      "t": 21.0,
+      "rate": 533.9
+    },
+    {
+      "t": 22.0,
+      "rate": 552.9
+    },
+    {
+      "t": 23.0,
+      "rate": 558.9
+    },
+    {
+      "t": 24.0,
+      "rate": 544.9
+    },
+    {
+      "t": 25.0,
+      "rate": 554.9
+    },
+    {
+      "t": 26.0,
+      "rate": 531.9
+    },
+    {
+      "t": 27.0,
+      "rate": 554.9
+    },
+    {
+      "t": 28.0,
+      "rate": 538.8
+    },
+    {
+      "t": 29.0,
+      "rate": 565.9
+    },
+    {
+      "t": 30.0,
+      "rate": 563.9
+    },
+    {
+      "t": 31.0,
+      "rate": 536.9
+    },
+    {
+      "t": 32.0,
+      "rate": 526.9
+    },
+    {
+      "t": 33.0,
+      "rate": 550.9
+    },
+    {
+      "t": 34.0,
+      "rate": 548.9
+    },
+    {
+      "t": 35.0,
+      "rate": 525.9
+    },
+    {
+      "t": 36.0,
+      "rate": 543.9
+    },
+    {
+      "t": 37.0,
+      "rate": 564.9
+    },
+    {
+      "t": 38.0,
+      "rate": 549.9
+    },
+    {
+      "t": 39.0,
+      "rate": 557.9
+    },
+    {
+      "t": 40.0,
+      "rate": 555.9
+    },
+    {
+      "t": 41.0,
+      "rate": 574.9
+    },
+    {
+      "t": 42.0,
+      "rate": 554.9
+    },
+    {
+      "t": 43.0,
+      "rate": 508.9
+    },
+    {
+      "t": 44.0,
+      "rate": 579.9
+    },
+    {
+      "t": 45.0,
+      "rate": 551.9
+    },
+    {
+      "t": 46.0,
+      "rate": 548.9
+    },
+    {
+      "t": 47.0,
+      "rate": 544.9
+    },
+    {
+      "t": 48.0,
+      "rate": 571.9
+    },
+    {
+      "t": 49.0,
+      "rate": 517.9
+    },
+    {
+      "t": 50.0,
+      "rate": 529.9
+    },
+    {
+      "t": 51.0,
+      "rate": 570.9
+    },
+    {
+      "t": 52.01,
+      "rate": 494.9
+    },
+    {
+      "t": 53.01,
+      "rate": 497.9
+    },
+    {
+      "t": 54.01,
+      "rate": 495.9
+    },
+    {
+      "t": 55.01,
+      "rate": 500.0
+    },
+    {
+      "t": 56.01,
+      "rate": 497.0
+    },
+    {
+      "t": 57.01,
+      "rate": 479.9
+    },
+    {
+      "t": 58.01,
+      "rate": 421.0
+    },
+    {
+      "t": 59.01,
+      "rate": 318.0
+    },
+    {
+      "t": 60.01,
+      "rate": 228.0
+    }
+  ],
+  "totals_whole_run": {
+    "cache_gateway_coalesced_requests_total": 357.0,
+    "cache_gateway_bloom_queries_total{result=\"hit\"}": 31688.0,
+    "cache_gateway_cache_operations_total{outcome=\"miss\"}": 10522.0,
+    "cache_gateway_cache_operations_total{outcome=\"hit\"}": 21163.0,
+    "cache_gateway_database_queries_total{operation=\"get_by_id\"}": 10165.0,
+    "cache_gateway_database_queries_total{operation=\"update_by_id\"}": 10240.0
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "scenario": "avalanche-with-jitter",
+  "run": 3,
+  "recorded_at": "2026-10-05T10:59:46.922Z",
+  "config": {
+    "base_url": "http://localhost:8010",
+    "warmup_keys": 1000,
+    "ttl_seconds": 60,
+    "rate": 400,
+    "hold_duration": "90s"
+  },
+  "results": {
+    "requests": 35339,
+    "rps": 323.6,
+    "error_rate": 0,
+    "latency_ms": {
+      "avg": 218.72,
+      "med": 151.99,
+      "p95": 587.85,
+      "p99": 1063.51,
+      "max": 2797.87
+    },
+    "cache": {
+      "hits": 54,
+      "misses": 35285,
+      "hit_rate_pct": 0.2
+    }
+  }
+}

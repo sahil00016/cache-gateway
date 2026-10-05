@@ -1,0 +1,28 @@
+{
+  "scenario": "penetration-protected",
+  "run": 1,
+  "recorded_at": "2026-10-05T09:17:06.240Z",
+  "config": {
+    "base_url": "http://localhost:8010",
+    "dataset": 1000000,
+    "rate": 400,
+    "duration": "60s"
+  },
+  "results": {
+    "requests": 28002,
+    "rps": 400,
+    "error_rate": 0,
+    "latency_ms": {
+      "avg": 5.04,
+      "med": 3.72,
+      "p95": 10.75,
+      "p99": 26.82,
+      "max": 165.42
+    },
+    "penetration": {
+      "total_attempts": 28002,
+      "fast_responses_under_2ms": 581,
+      "fast_response_pct": 2.1
+    }
+  }
+}

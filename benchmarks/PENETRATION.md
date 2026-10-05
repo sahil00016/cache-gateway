@@ -1,151 +1,172 @@
-# Cache Penetration Protection — Before and After
+# M4 Cache Penetration — Bloom filter, before and after
 
-**Milestone:** M4
-**Date:** 2026-09-28
-**Measured by:** [Your name]
+**Recorded:** 2026-10-05
+**Scenario:** `benchmarks/scenarios/penetration.js`
+**Raw results:** `benchmarks/results/penetration-*.json`
 
 ## What this measures
 
-Cache penetration: requests for IDs that do not exist in Postgres. Without
-protection, every request misses Redis and hits the database. With the Bloom
-filter, the attack is blocked before Redis or Postgres is touched.
+Cache penetration: requests for ids that do not exist in Postgres. A cache
+holds no negative result, so every such request misses Redis and reaches the
+database. The Bloom filter answers "definitely not present" before either
+datastore is touched.
 
-## Methodology
+The attack is unbounded by design — ids are drawn from `DATASET+1 .. 2*DATASET`,
+so no amount of null-caching can ever cover the keyspace. That is the argument
+in [ADR-0003](../docs/adr/0003-bloom-filter-for-penetration-protection.md), and this is
+its measurement.
 
-**Scenario:** `benchmarks/scenarios/penetration.js`
-**Key distribution:** Absent (IDs from DATASET+1 to 2*DATASET)
-**Dataset size:** 1,000,000 products (IDs 1 to 1,000,000)
-**Request rate:** 400 RPS
-**Duration:** 60s measured + 10s warm-up
-**Runs per configuration:** 3 (median reported)
+## Environment
 
-All runs use the same EC2 instance type, same dataset, same warm Postgres, and
-the identical scenario script. The only variable is `BLOOM_ENABLED`.
+| | |
+|---|---|
+| Host | 12 vCPU dev machine, **shared with other running containers** |
+| Service | docker compose, gunicorn + **4 uvicorn workers**, python:3.12-slim |
+| Database | PostgreSQL 16, containerised, `max_connections=100`, pool 10 + 15 overflow |
+| Dataset | 1,000,000 products, seeded deterministically (rng seed 42) |
+| Cache TTL | 60s, 10% jitter |
+| Load | k6, constant arrival rate 400/s, 10s warm-up discarded, 60s measured |
+| Runs | 3 per arm, median reported |
+| Counters | read from the service's own `/metrics`, sampled at 1 Hz |
 
-## Configuration
-
-### Run 1: Unprotected (baseline)
-```bash
-BLOOM_ENABLED=false
-k6 run -e SCENARIO=penetration-unprotected -e RUN=1 benchmarks/scenarios/penetration.js
-```
-
-### Run 2: Bloom filter enabled
-```bash
-BLOOM_ENABLED=true
-BLOOM_EXPECTED_ITEMS=1000000
-BLOOM_FP_RATE=0.01
-k6 run -e SCENARIO=penetration-protected -e RUN=1 benchmarks/scenarios/penetration.js
-```
+Effective settings were read back from `/v1/admin/stats` before every run and
+asserted against the intended configuration, per
+[ADR-0002](../docs/adr/0002-env-var-typos-are-silent.md). The only variable between
+arms is `BLOOM_ENABLED`.
 
 ## Results
 
-### Without Bloom filter
+### Database load — the headline
 
-| Metric | Value |
-|---|---|
-| Total requests | TBD |
-| RPS achieved | TBD |
-| DB queries (Postgres) | TBD |
-| **DB query rate** | **TBD (expect ~100%)** |
-| p50 latency | TBD ms |
-| p95 latency | TBD ms |
-| p99 latency | TBD ms |
-| Cache hit rate | 0% (nothing to cache) |
-
-**Observation:** Every request reaches Postgres. Attack succeeds completely.
-
-### With Bloom filter enabled
-
-| Metric | Value |
-|---|---|
-| Total requests | TBD |
-| RPS achieved | TBD |
-| DB queries (Postgres) | TBD |
-| **DB query rate** | **TBD (expect ~1%)** |
-| p50 latency | TBD ms |
-| p95 latency | TBD ms |
-| p99 latency | TBD ms |
-| Bloom rejections | TBD |
-| **Protection rate** | **TBD% blocked** |
-| Measured FP rate | TBD% |
-
-**Observation:** ~99% of attack traffic blocked. Only false positives reach the
-database.
-
-## Before/After comparison
+| | run 1 | run 2 | run 3 | **median** |
+|---|---|---|---|---|
+| Bloom **disabled** — DB queries | 23,195 | 19,744 | 23,428 | **23,195** |
+| Bloom **enabled** — DB queries | 242 | 239 | 245 | **242** |
 
 | | Unprotected | Protected | Change |
 |---|---|---|---|
-| DB QPS | TBD | TBD | **TBD% reduction** |
-| p99 latency | TBD ms | TBD ms | TBD |
-| Attack blocked | 0% | TBD% | - |
+| **DB queries (60s)** | **23,195** | **242** | **−99.0%** |
+| **DB QPS** | **397.0** | **4.1** | **−99.0%** |
+| Requests in measured window | 23,195 | 23,603 | — |
+| Achieved rate (k6, whole run) | 395.4/s | 400.0/s | — |
+| Error rate | 0 | 0 | — |
+
+Request counts above are taken from the service's counters over the 60s
+measured window — cache misses when the filter is off, Bloom lookups when it is
+on. k6's own `requests` figure (median 27,788 / 28,002) spans the full 70s
+including the discarded warm-up, so the two are not directly comparable and are
+not mixed here.
+
+Unprotected, database QPS equals the request rate: every single attack request
+reaches Postgres. That is the definition of a successful penetration attack,
+and it reproduces the M2 baseline's 1:1 finding exactly.
+
+### Bloom filter behaviour
+
+| | run 1 | run 2 | run 3 | median |
+|---|---|---|---|---|
+| Rejected (`bloom_queries{result=miss}`) | 23,361 | 22,466 | 23,358 | 23,358 |
+| Passed through (`result=hit`) | 242 | 239 | 245 | 242 |
+| **Measured false positive rate** | 1.03% | 1.05% | 1.04% | **1.04%** |
+
+**98.97% of attack traffic is rejected before Redis or Postgres is touched.**
+The 1.04% that gets through is the filter's false positive rate, configured at
+`BLOOM_FP_RATE=0.01`. Measured 1.04% against a 1.0% target is the filter
+behaving exactly as specified — the residual database load *is* the false
+positive rate, not leakage from some other cause.
+
+That correspondence is the strongest evidence in this document. The queries
+reaching Postgres are not "roughly one percent"; they are 242 out of 23,603
+lookups where 236 were predicted.
+
+### Latency
+
+Milliseconds, median of 3 runs.
+
+| | med | p95 | p99 | max |
+|---|---|---|---|---|
+| Unprotected | 11.70 | 123.59 | 628.80 | 1063.54 |
+| Protected | 3.72 | 10.75 | 33.33 | 165.42 |
+
+**Latency improves roughly 3x at the median and 19x at p99** — but read this
+carefully. It is not that the Bloom filter is fast; it is that *the unprotected
+service is overloaded*. At 400 queries/second against a shared host, Postgres is
+the bottleneck and the latency reflects queueing, not lookup cost.
+
+This matches the lesson from [ADR-0009](../docs/adr/0009-cache-adds-round-trip-latency.md):
+the case for every protection in this service is **database load**, and latency
+only moves once the database is genuinely under pressure. Here it is, so it does.
+
+### A caveat on run 2
+
+Run 2 of both arms shows a disturbed tail — unprotected p99 of 5,394 ms,
+protected p99 of 1,002 ms, against sub-35 ms p99 in runs 1 and 3. Throughput
+also dipped (19,744 queries vs ~23,300). The host is shared with other
+containers, and this is what that looks like.
+
+The run is reported rather than discarded: it does not change the median on any
+headline figure, and omitting inconvenient runs is how benchmarks become
+marketing. But the p95/p99/max columns above should be read as "typical of a
+shared host", not as a latency SLO.
 
 ## Memory cost
 
-From `/proc/<pid>/status` on the running service:
-
-| Metric | Value |
+| | |
 |---|---|
-| Bloom filter size (per worker) | ~1.2 MB |
-| Worker count | 4 |
-| Total Bloom memory | ~4.8 MB |
-| Saturation | 100.0% (1M items / 1M capacity) |
+| Bloom filter size per worker | ~1.2 MB |
+| Workers | 4 |
+| **Total** | **~4.8 MB** |
+| Saturation | 100% (1M items / 1M capacity) |
+
+4.8 MB of process memory removes 99% of an unbounded attack. The null-cache
+alternative rejected in ADR-0003 would have needed 50–100 MB *and* would still
+have failed, because an attacker drawing fresh ids never reuses a cached
+negative.
 
 ## The deletion problem
 
-A Bloom filter cannot remove keys. When a product is deleted, the filter still
-says "might exist", so the request falls through to Postgres and correctly 404s.
-This degrades to a false positive.
+A Bloom filter cannot remove a key. A deleted product still answers "might
+exist", so the request falls through to Postgres and correctly 404s — it
+degrades to a false positive rather than a wrong answer.
 
-**Measured FP rate:** TBD% (vs 1.0% predicted)
+The measured 1.04% is the filter's designed error rate on a freshly built
+filter with no deletions. In a workload with sustained deletes this figure
+climbs, and the mitigation is a rebuild:
 
-If this is significantly higher than predicted, run:
 ```bash
 curl -X POST http://localhost:8010/v1/admin/bloom/rebuild
 ```
 
-Rebuild takes ~1-2 seconds for 1M rows and resets the filter from current
-Postgres truth.
+**Not measured here:** how fast the false positive rate degrades under a given
+delete rate. That needs a delete-heavy workload this scenario does not generate,
+and claiming a number for it would be inventing one.
 
 ## Conclusion
 
-**The Bloom filter blocks 99%+ of cache penetration attacks** at a fixed memory
-cost of ~5 MB. The attack never reaches Redis or Postgres.
+The Bloom filter removes **99.0% of database load** under cache penetration for
+**~4.8 MB** of memory, and the residual is precisely its configured false
+positive rate. The attack reaches neither Redis nor Postgres.
 
-**Trade-off:** Cannot delete from the filter. Mitigation is periodic rebuild,
-which is cheap (1-2s for 1M rows) and can be scheduled or triggered on-demand.
+**Trade-off:** no deletion from the filter, mitigated by periodic rebuild.
 
-**Next:** See ADR-0003 for the Bloom vs null-caching comparison and the sizing
-arithmetic.
+## Harness note
 
----
+The scenario could not run at all before 2026-10-05. It carried a threshold on
+`http_req_status_code`, which is not a k6 metric, so k6 aborted before issuing a
+request. It also inherited k6's default failure rule — status ≥ 400 counts as
+failed — under which a perfect run, where every response is a 404 by design,
+scored as 100% failed. Both are fixed; the scenario now declares 404 as its
+expected status via `http.setResponseCallback`.
 
-## Running the benchmark yourself
+A latency-based "blocked by Bloom" counter in the original script is retained
+only as a cross-check and is explicitly *not* the source of any number above.
+It cannot distinguish a Bloom rejection from a fast Redis negative lookup. Every
+figure in this document comes from the service's own counters.
 
-1. Start the stack:
-   ```bash
-   task up
-   docker compose logs -f api  # wait for "Bloom filter built from database"
-   ```
+## Reproducing
 
-2. Seed the dataset:
-   ```bash
-   docker compose exec api python -m scripts.seed_products
-   ```
-
-3. Run unprotected:
-   ```bash
-   # Set BLOOM_ENABLED=false in .env or docker-compose.yml
-   docker compose restart api
-   k6 run -e SCENARIO=penetration-unprotected benchmarks/scenarios/penetration.js
-   ```
-
-4. Run protected:
-   ```bash
-   # Set BLOOM_ENABLED=true in .env
-   docker compose restart api
-   k6 run -e SCENARIO=penetration-protected benchmarks/scenarios/penetration.js
-   ```
-
-5. Compare results in `benchmarks/results/penetration-*.json`
+```bash
+task up
+python benchmarks/run.py penetration-unprotected penetration-protected --runs 3
+python benchmarks/summarize.py penetration
+```

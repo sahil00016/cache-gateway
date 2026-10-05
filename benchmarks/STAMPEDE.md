@@ -1,158 +1,157 @@
-# Cache Stampede Protection — Before and After
+# M6 Cache Stampede — request coalescing, before and after
 
-**Milestone:** M6
-**Date:** 2026-09-28
-**Measured by:** [Your name]
+**Recorded:** 2026-10-05
+**Scenario:** `benchmarks/scenarios/stampede.js`
+**Raw results:** `benchmarks/results/stampede-*.json`
 
 ## What this measures
 
-Cache stampede: one hot key expires under concurrent load. Without protection,
-every concurrent request issues a duplicate database query. With request
-coalescing, concurrent requests for the same key deduplicate — only one query
-runs while the others wait for its result.
+Cache stampede: many concurrent requests for **one** key that has just expired.
+Without protection each issues its own identical database query. With
+coalescing one request per worker queries and the rest wait on its result
+([ADR-0005](../docs/adr/0005-request-coalescing-for-stampede-protection.md)).
 
-## Methodology
+## Environment
 
-**Scenario:** `benchmarks/scenarios/stampede.js`
-**Hot key:** Product ID 42 (warmed at start)
-**Cache TTL:** 60 seconds
-**Background load:** 50 RPS (keeps service alive)
-**Stampede burst:** 500 concurrent VUs at t=65s (after key expires)
-**Runs per configuration:** 3 (median reported)
+| | |
+|---|---|
+| Host | 12 vCPU dev machine, **shared with other running containers** |
+| Service | docker compose, gunicorn + **4 uvicorn workers** |
+| Database | PostgreSQL 16, pool 10 + 15 overflow |
+| Load | 200 VUs, no think time, **all on product id 42** |
+| Cache TTL | **5s, jitter 0** — ~12 expiry events per 60s run |
+| Duration | 60s |
+| Runs | 3 per arm |
+| Counters | service `/metrics`, sampled at 1 Hz |
 
-All runs use the same instance type, same dataset, same worker count (4). The
-only variable is `COALESCE_ENABLED`.
-
-## Configuration
-
-### Run 1: No coalescing (baseline)
-```bash
-COALESCE_ENABLED=false
-k6 run -e SCENARIO=stampede-no-coalesce -e HOT_KEY=42 benchmarks/scenarios/stampede.js
-```
-
-### Run 2: Request coalescing enabled
-```bash
-COALESCE_ENABLED=true
-k6 run -e SCENARIO=stampede-with-coalesce -e HOT_KEY=42 benchmarks/scenarios/stampede.js
-```
+The only variable is `COALESCE_ENABLED`.
 
 ## Results
 
-### Without coalescing
+### Database queries
 
-| Metric | Value |
+| | run 1 | run 2 | run 3 | median |
+|---|---|---|---|---|
+| No coalescing | 404 | 210 | 224 | **224** |
+| With coalescing | 23 | 33 | 30 | **30** |
+
+Achieved throughput varied between runs (126–462 req/s) because 200 VUs with no
+think time saturate the service, so the absolute counts partly track how much
+load the client delivered. Normalising removes that:
+
+| | run 1 | run 2 | run 3 | median |
+|---|---|---|---|---|
+| No coalescing — DB queries per 1,000 requests | 14.49 | 13.64 | 29.33 | **14.49** |
+| With coalescing — DB queries per 1,000 requests | 1.47 | 1.60 | 1.44 | **1.47** |
+
+**89.9% of duplicate queries eliminated**, and the normalised protected figure
+is stable to ±0.08 across runs where the raw counts swing 23–33.
+
+### Per stampede event
+
+With ~12 expiries per run:
+
+| | queries per expiry |
 |---|---|
-| Stampede requests | 500 (concurrent) |
-| DB queries during stampede | TBD (expect ~500) |
-| **Duplicate queries** | **TBD (expect 100%)** |
-| p50 latency (stampede) | TBD ms |
-| p95 latency (stampede) | TBD ms |
-| p99 latency (stampede) | TBD ms |
+| No coalescing | **~18.7** |
+| With coalescing | **~2.5** |
 
-**Observation:** Every request issues a duplicate DB query. 500 concurrent
-requests = 500 identical queries.
+**~2.5 against a 4-worker ceiling is exactly what ADR-0005 predicts.** The
+coalescer behaves as designed — it is below 4 because not every worker happens
+to receive a request inside each miss window.
 
-### With coalescing (per-worker)
+### Direct evidence the mechanism engages
 
-| Metric | Value |
-|---|---|
-| Stampede requests | 500 (concurrent) |
-| DB queries during stampede | TBD (expect 1-4) |
-| **Duplicate queries** | **TBD (expect 1-4, one per worker)** |
-| **Reduction** | **99.2%+ (500 → 4)** |
-| p50 latency (stampede) | TBD ms |
-| p95 latency (stampede) | TBD ms |
-| p99 latency (stampede) | TBD ms |
+`cache_gateway_coalesced_requests_total` over the measured window:
 
-**Observation:** Coalescing reduces duplicates by 99.2%. With 4 workers, up to
-4 queries (one per worker), not 500.
-
-## Before/After comparison
-
-| | No coalescing | With coalescing | Change |
+| | run 1 | run 2 | run 3 |
 |---|---|---|---|
-| DB queries (stampede) | TBD (~500) | TBD (1-4) | **99.2%+ reduction** |
-| p99 latency | TBD ms | TBD ms | TBD |
-| Duplicate queries | 100% | < 1% | - |
+| No coalescing | 0 | 0 | 0 |
+| With coalescing | 527 | 430 | 468 |
 
-## The per-worker limitation
+Roughly 470 requests per run waited on a leader instead of issuing their own
+query. This is the coalescer counting its own work, not an inference from
+timing.
 
-The coalescer lives in **process memory**, not Redis. With 4 uvicorn workers,
-there are 4 independent coalescers. A hot-key expiry yields **up to 4 duplicate
-queries** (one per worker), not 1.
+### Latency — coalescing stabilises the tail
 
-This is not a bug — it's the most interesting architectural fact in M6.
+Milliseconds.
 
-**Why this matters:**
-- 4 duplicate queries instead of 500 is already a **99.2% reduction**
-- The remaining 3 queries are not meaningful load on Postgres
-- Eliminating those last 3 would require a Redis distributed lock, which adds:
-  - +1-2ms latency on every cache miss (Redis round trip)
-  - New failure mode: lock holder dies → others wait for lease expiry
+| | med (median of runs) | p99 range |
+|---|---|---|
+| No coalescing | 400.93 | 1,372 – **23,852** |
+| With coalescing | 573.03 | 1,051 – 1,150 |
 
-**Conclusion:** The per-worker coalescer is the right tradeoff. The Redis lock
-optimizes for a problem we don't have yet (4 queries is fine) at the cost of
-latency on every miss.
+The unprotected p99 is not merely worse, it is *unstable* — one run reached
+23.9 seconds. Every duplicate query takes a connection from a 25-connection
+pool, so a stampede on a saturated service queues everything behind it.
+Coalescing holds p99 in a 100 ms band across all three runs.
 
-## Edge cases verified
+Median latency is slightly *higher* with coalescing (573 ms vs 401 ms), which is
+expected: waiters block on the leader rather than racing it. That is the trade —
+a slightly slower median for a tail that does not collapse.
 
-The hand-built coalescer handles three subtle edge cases:
+## The claim this scenario could not support
 
-1. **Cancelled waiter doesn't cancel leader** — `asyncio.shield` prevents one
-   disconnected client from killing the query for everyone else
-2. **Leader exception propagates to all waiters** — `fut.set_exception(exc)`
-   ensures failures don't leave waiters hanging forever
-3. **Cleanup on all paths** — `finally` block removes the future from the dict
-   on success, failure, AND cancellation to prevent key poisoning
+ADR-0005 states 500 concurrent requests produce 500 duplicate queries, reduced
+to 4 by coalescing — a 99.2% reduction. **The 500 figure is not reachable, and
+the original scenario could not have measured it.**
 
-All three verified by dedicated tests in `tests/service/test_coalescer.py`.
+A stampede only forms inside the window where the key is absent from cache:
+from the first miss until the first query writes the value back. For a
+single-row primary key lookup that is ~2.5 ms (see `BASELINE.md`). So
+
+```
+duplicate queries  ≈  arrival rate × miss window
+```
+
+— a function of **arrival rate**, not of client count. Producing 500 duplicates
+against a 2.5 ms window needs ~200,000 req/s. This hardware does not reach it,
+and no amount of harness quality changes that.
+
+The first design fired 500 VUs with one iteration each. k6 needs seconds to
+start 500 VUs, so the burst arrived spread across seconds and almost nothing
+landed inside a 2.5 ms window. Measured result: **57 vs 64 queries** for the
+protected and unprotected arms — a difference inside the noise, with only 23
+requests coalescing across an entire run. It measured background traffic.
+
+The redesign trades the one-shot burst for sustained concurrency (200 VUs always
+in flight, so every expiry meets 200 simultaneous misses) and one expiry for
+twelve (5 s TTL). That produces a measurable stampede — just a ~19-deep one
+rather than a 500-deep one.
+
+**Corrected claim: 86.6% fewer duplicate queries (224 → 30), or 89.9%
+normalised per request — not 99.2%.** The protected side of the original
+prediction was right; the unprotected side was overstated by more than an order
+of magnitude.
 
 ## Conclusion
 
-**Request coalescing eliminates 99.2% of stampede duplicates** with zero added
-latency (in-process) and no new failure modes.
+Request coalescing eliminates **89.9%** of duplicate database queries during a
+cache stampede and reduces per-event duplicates from ~18.7 to ~2.5, within the
+4-worker ceiling the design predicts. It also keeps p99 latency inside a 100 ms
+band where the unprotected service ranges to 23.9 seconds.
 
-**Trade-off:** Per-worker limitation means up to 4 queries instead of 1. This is
-acceptable — 4 is not meaningful load, and avoiding it would cost latency on
-every cache miss.
+The cost is a slightly higher median latency, because waiters block on a leader.
 
-**Next:** See ADR-0005 for the hand-built implementation, edge-case handling,
-and why the Redis distributed lock is not worth its cost at this scale.
+**The headline reduction is 86–90%, not 99.2%.** The difference is entirely in
+the baseline: a real stampede on a fast query is about 19 duplicates deep, not
+500. Coalescing is still clearly worth its ~160 lines.
 
----
+## Harness note
 
-## Running the benchmark yourself
+This scenario was redesigned on 2026-10-05 because the original could not
+produce a stampede at all — see **The claim this scenario could not support**
+above. Numbers from before that date describe background traffic on unrelated
+keys, not coalescing.
 
-1. Start the stack with 4 workers:
-   ```bash
-   task up
-   docker compose logs -f api
-   ```
+Database query counts come from the service's own counters. k6 cannot observe
+them, and the original script's note saying so was correct.
 
-2. Seed the dataset:
-   ```bash
-   docker compose exec api python -m scripts.seed_products
-   ```
+## Reproducing
 
-3. Run without coalescing:
-   ```bash
-   # Set COALESCE_ENABLED=false in .env
-   docker compose restart api
-   k6 run -e SCENARIO=stampede-no-coalesce -e HOT_KEY=42 benchmarks/scenarios/stampede.js
-   ```
-
-4. Run with coalescing:
-   ```bash
-   # Set COALESCE_ENABLED=true in .env
-   docker compose restart api
-   k6 run -e SCENARIO=stampede-with-coalesce -e HOT_KEY=42 benchmarks/scenarios/stampede.js
-   ```
-
-5. Extract DB query count from Prometheus:
-   ```bash
-   # During the stampede burst (t=65-70s), query:
-   # rate(cache_gateway_database_queries_total{operation="get_by_id"}[10s])
-   ```
-
-6. Compare: without coalescing expect ~500 queries, with coalescing expect 1-4
+```bash
+task up
+python benchmarks/run.py stampede-no-coalesce stampede-with-coalesce --runs 3
+python benchmarks/summarize.py stampede
+```
