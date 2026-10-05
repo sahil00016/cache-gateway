@@ -1,0 +1,25 @@
+# Benchmark override. Used only by benchmarks/run.py.
+#
+# docker-compose.yml hardcodes the failure-mode flags, which is right for
+# development but makes a before/after run impossible without editing a tracked
+# file between arms. This override turns each flag into a passthrough so the
+# runner can set it per arm, and defaults every one to the protected value so
+# an accidental `-f docker-compose.bench.yml` without the runner behaves
+# exactly like the plain stack.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.bench.yml up -d api
+
+services:
+  api:
+    environment:
+      CACHE_TTL_SECONDS: "${BENCH_CACHE_TTL_SECONDS:-60}"
+      CACHE_TTL_JITTER_PCT: "${BENCH_CACHE_TTL_JITTER_PCT:-10}"
+      BLOOM_ENABLED: "${BENCH_BLOOM_ENABLED:-true}"
+      COALESCE_ENABLED: "${BENCH_COALESCE_ENABLED:-true}"
+      CACHE_INVALIDATE_ON_WRITE: "${BENCH_CACHE_INVALIDATE_ON_WRITE:-true}"
+      WEB_CONCURRENCY: "${BENCH_WEB_CONCURRENCY:-4}"
+      # Benchmark conditions are held constant with the committed M2/M3
+      # baselines, which were measured with tracing off and warning-level logs.
+      OTEL_ENABLED: "false"
+      LOG_LEVEL: "WARNING"
+      DB_ECHO: "false"

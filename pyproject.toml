@@ -52,6 +52,9 @@ ignore = [
 # contain "magic" values -- that is what a test IS.
 "tests/**/*.py" = ["D", "S101", "ANN", "PLR2004", "ARG"]
 "migrations/**/*.py" = ["D", "ANN", "ERA", "N999"]
+# Benchmark runners are operator CLIs, not library code: printing IS their
+# output, they take wall-clock timings, and they shell out to docker and k6.
+"benchmarks/**/*.py" = ["T201", "D103", "S603", "S607", "PLR2004", "BLE001", "ANN401"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
