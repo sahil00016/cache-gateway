@@ -1,0 +1,27 @@
+{
+  "scenario": "baseline-zipf",
+  "run": 1,
+  "recorded_at": "2026-09-21T16:46:23.262Z",
+  "config": {
+    "base_url": "http://localhost:8010",
+    "distribution": "zipf",
+    "dataset": 1000000,
+    "skew": 1.1,
+    "rate": 400,
+    "duration": "60s"
+  },
+  "results": {
+    "requests": 35963,
+    "rps": 399.6,
+    "error_rate": 0,
+    "latency_ms": {
+      "avg": 3.59,
+      "med": 2.53,
+      "p95": 3.6,
+      "p99": 6.73,
+      "max": 428.64
+    },
+    "found": 35963,
+    "missing": 0
+  }
+}

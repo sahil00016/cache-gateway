@@ -1,0 +1,27 @@
+{
+  "scenario": "sanity-longttl-zipf",
+  "run": 1,
+  "recorded_at": "2026-09-22T18:00:09.412Z",
+  "config": {
+    "base_url": "http://localhost:8010",
+    "distribution": "zipf",
+    "dataset": 1000000,
+    "skew": 1.1,
+    "rate": 400,
+    "duration": "30s"
+  },
+  "results": {
+    "requests": 23761,
+    "rps": 396,
+    "error_rate": 0,
+    "latency_ms": {
+      "avg": 8.43,
+      "med": 3.48,
+      "p95": 6.21,
+      "p99": 98.47,
+      "max": 1191.42
+    },
+    "found": 23761,
+    "missing": 0
+  }
+}

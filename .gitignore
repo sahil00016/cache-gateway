@@ -21,8 +21,12 @@ htmlcov/
 # Build / local artefacts
 dist/
 build/
-benchmarks/results/*.json
-!benchmarks/results/.gitkeep
+# Benchmark results are deliberately NOT ignored. benchmarks/README.md states
+# that raw JSON output is committed, and a reported number whose raw output
+# cannot be inspected is not reproducible -- which is the whole argument the
+# benchmark docs rest on. Smoke and scratch runs are the exception.
+benchmarks/results/smoke-*.json
+benchmarks/results/*-runsmoke.json
 
 # Terraform
 deploy/terraform/.terraform/

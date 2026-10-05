@@ -1,0 +1,27 @@
+{
+  "scenario": "cache-aside-zipf",
+  "run": 1,
+  "recorded_at": "2026-09-22T17:51:03.545Z",
+  "config": {
+    "base_url": "http://localhost:8010",
+    "distribution": "zipf",
+    "dataset": 1000000,
+    "skew": 1.1,
+    "rate": 400,
+    "duration": "60s"
+  },
+  "results": {
+    "requests": 35872,
+    "rps": 398.6,
+    "error_rate": 0,
+    "latency_ms": {
+      "avg": 5.04,
+      "med": 3.46,
+      "p95": 5.76,
+      "p99": 9.57,
+      "max": 751.92
+    },
+    "found": 35872,
+    "missing": 0
+  }
+}

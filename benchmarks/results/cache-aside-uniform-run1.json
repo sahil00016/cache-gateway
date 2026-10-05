@@ -1,0 +1,27 @@
+{
+  "scenario": "cache-aside-uniform",
+  "run": 1,
+  "recorded_at": "2026-09-22T17:55:35.397Z",
+  "config": {
+    "base_url": "http://localhost:8010",
+    "distribution": "uniform",
+    "dataset": 1000000,
+    "skew": 1.1,
+    "rate": 400,
+    "duration": "60s"
+  },
+  "results": {
+    "requests": 35869,
+    "rps": 398.5,
+    "error_rate": 0,
+    "latency_ms": {
+      "avg": 7.4,
+      "med": 3.94,
+      "p95": 7.5,
+      "p99": 119.82,
+      "max": 603.81
+    },
+    "found": 35869,
+    "missing": 0
+  }
+}

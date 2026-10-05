@@ -1,0 +1,27 @@
+{
+  "scenario": "baseline-uniform",
+  "run": 3,
+  "recorded_at": "2026-09-21T16:54:09.503Z",
+  "config": {
+    "base_url": "http://localhost:8010",
+    "distribution": "uniform",
+    "dataset": 1000000,
+    "skew": 1.1,
+    "rate": 400,
+    "duration": "60s"
+  },
+  "results": {
+    "requests": 36001,
+    "rps": 400,
+    "error_rate": 0,
+    "latency_ms": {
+      "avg": 2.88,
+      "med": 2.53,
+      "p95": 3.45,
+      "p99": 4.57,
+      "max": 261.93
+    },
+    "found": 36001,
+    "missing": 0
+  }
+}
