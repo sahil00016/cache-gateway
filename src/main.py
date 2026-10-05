@@ -11,6 +11,7 @@ exists, and failed in CI, where none does.
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.router import api_router
 from src.common import openapi
@@ -50,6 +51,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # set before the access log reads it, so it is added last.
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(RequestIdMiddleware)
+
+    # CORS is installed only when an origin is actually configured. The default
+    # is no middleware rather than a permissive one: this API has no browser
+    # client until the M9 dashboard exists, and a service that allows any
+    # origin by default is one deployment away from allowing it in production.
+    # Origins are listed explicitly -- `allow_origins=["*"]` with
+    # `allow_credentials=True` is rejected by browsers anyway, and silently
+    # degrades rather than failing loudly.
+    if settings.cors_allow_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_allow_origins,
+            allow_credentials=True,
+            allow_methods=["GET", "PUT", "DELETE", "POST", "OPTIONS"],
+            allow_headers=["Content-Type", "X-Request-ID"],
+        )
 
     register_exception_handlers(app)
     configure_tracing(app, settings)

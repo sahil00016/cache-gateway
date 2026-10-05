@@ -21,6 +21,9 @@ class EffectiveSettings(BaseModel):
         description="Worker count. Bounds what per-process protections can guarantee."
     )
     write_strategy: str = Field(description="How writes reconcile the cache with Postgres.")
+    cache_invalidate_on_write: bool = Field(
+        description="Whether a write deletes the cached entry (M7 delete-on-write)."
+    )
 
     cache_ttl_seconds: int = Field(description="Base TTL for a cached product.")
     cache_ttl_jitter_pct: int = Field(description="Jitter as a percentage of the base TTL.")
@@ -70,3 +73,33 @@ class BloomRebuildResult(BaseModel):
 
     count: int = Field(description="Count of product IDs loaded into the filter.")
     duration_seconds: float = Field(description="Time spent rebuilding, in seconds.")
+
+
+class MetricSample(BaseModel):
+    """One labelled time series and its current value."""
+
+    name: str = Field(description="Metric family name, without the _total suffix stripped.")
+    labels: dict[str, str] = Field(
+        default_factory=dict, description="Label set identifying this series."
+    )
+    value: float = Field(description="Current value, aggregated across live workers.")
+
+
+class MetricsSnapshot(BaseModel):
+    """Current metric values as JSON.
+
+    The same numbers ``/metrics`` renders in Prometheus exposition format.
+    That format exists for Prometheus, and asking a browser dashboard to parse
+    it means shipping a text-format parser to the client and keeping it
+    correct. A dashboard polling a JSON endpoint needs neither.
+
+    Counters only grow, so a caller wanting a rate takes the difference between
+    two snapshots -- which is exactly what ``benchmarks/run.py`` does against
+    the text endpoint, and why this shape mirrors it.
+    """
+
+    scraped_at: str = Field(description="UTC timestamp of this snapshot, ISO 8601.")
+    multiprocess: bool = Field(
+        description="True when values are aggregated across gunicorn workers (ADR-0007)."
+    )
+    samples: list[MetricSample] = Field(description="Every sample in the registry.")

@@ -10,11 +10,20 @@ problem (see ADR-0003): when too many deleted products have accumulated as
 false positives, rebuild the filter from the current truth in Postgres.
 """
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter
 
 from src.api.deps import SessionDep, SettingsDep
 from src.core.envelope import SuccessResponse
-from src.schema.admin import BloomRebuildResult, BloomStats, EffectiveSettings
+from src.core.metrics import MULTIPROCESS_ENABLED, build_scrape_registry
+from src.schema.admin import (
+    BloomRebuildResult,
+    BloomStats,
+    EffectiveSettings,
+    MetricSample,
+    MetricsSnapshot,
+)
 from src.service.bloom import get_bloom_filter
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -39,6 +48,7 @@ async def stats(settings: SettingsDep) -> SuccessResponse[EffectiveSettings]:
             environment=settings.environment.value,
             web_concurrency=settings.web_concurrency,
             write_strategy=settings.write_strategy.value,
+            cache_invalidate_on_write=settings.cache_invalidate_on_write,
             cache_ttl_seconds=settings.cache_ttl_seconds,
             cache_ttl_jitter_pct=settings.cache_ttl_jitter_pct,
             cache_ttl_jitter_seconds=settings.cache_ttl_jitter_seconds,
@@ -99,3 +109,34 @@ async def rebuild_bloom(session: SessionDep) -> SuccessResponse[BloomRebuildResu
     bloom = get_bloom_filter()
     result = await bloom.build_from_db(session)
     return SuccessResponse[BloomRebuildResult](data=BloomRebuildResult(**result))
+
+
+@router.get(
+    "/metrics",
+    response_model=SuccessResponse[MetricsSnapshot],
+    summary="Current metric values as JSON",
+)
+async def metrics_json() -> SuccessResponse[MetricsSnapshot]:
+    """Return every metric sample as JSON, for browser clients.
+
+    ``/metrics`` already exposes these numbers, but in Prometheus exposition
+    format, which a dashboard can only consume by shipping a text parser to the
+    browser and keeping it correct as the format evolves. This endpoint reads
+    the same registry -- so it inherits the cross-worker aggregation of
+    ADR-0007 and cannot drift from the Prometheus output.
+
+    Returns:
+        A snapshot of every sample in the scrape registry.
+    """
+    samples = [
+        MetricSample(name=sample.name, labels=dict(sample.labels), value=sample.value)
+        for metric in build_scrape_registry().collect()
+        for sample in metric.samples
+    ]
+    return SuccessResponse[MetricsSnapshot](
+        data=MetricsSnapshot(
+            scraped_at=datetime.now(UTC).isoformat(),
+            multiprocess=MULTIPROCESS_ENABLED,
+            samples=samples,
+        )
+    )

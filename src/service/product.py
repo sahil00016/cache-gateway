@@ -183,8 +183,11 @@ class ProductService:
                 details={"product_id": product_id},
             )
 
-        # Invalidate cache (fail-open: write already succeeded)
-        await self._cache.delete(product_id)
+        # Invalidate cache (fail-open: write already succeeded). The toggle
+        # exists so the un-invalidated case can be measured, not because
+        # skipping invalidation is ever a reasonable production setting.
+        if get_settings().cache_invalidate_on_write:
+            await self._cache.delete(product_id)
 
         return ProductRead.model_validate(product)
 
@@ -209,8 +212,11 @@ class ProductService:
                 details={"product_id": product_id},
             )
 
-        # Invalidate cache (fail-open: write already succeeded)
-        await self._cache.delete(product_id)
+        # Invalidate cache (fail-open: write already succeeded). The toggle
+        # exists so the un-invalidated case can be measured, not because
+        # skipping invalidation is ever a reasonable production setting.
+        if get_settings().cache_invalidate_on_write:
+            await self._cache.delete(product_id)
 
         # Note: Bloom filter cannot remove the key. It becomes a false positive
         # until rebuild. This is the measured trade-off of using a Bloom filter.

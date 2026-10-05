@@ -57,6 +57,13 @@ class Settings(BaseSettings):
 
     write_strategy: WriteStrategy = WriteStrategy.CACHE_ASIDE
 
+    cache_invalidate_on_write: bool = True
+    """Delete-on-write invalidation (M7). Setting this False leaves the cache
+    untouched by a write, so a stale entry survives until its TTL expires --
+    which is how the before/after comparison for failure mode 4 is produced.
+    Every other protection already had such a toggle; this one did not, so the
+    M7 "before" arm could not be measured at all."""
+
     # ---------------------------------------------------- failure-mode flags --
     bloom_enabled: bool = True
     bloom_expected_items: Annotated[int, Field(ge=1)] = 1_000_000
@@ -76,6 +83,18 @@ class Settings(BaseSettings):
     """uvicorn worker count. Not merely a deployment detail: the Bloom filter
     and the coalescer are per-process, so this number changes what those
     protections can guarantee."""
+
+    # ---------------------------------------------------------------- cors --
+    cors_allow_origins: list[str] = []
+    """Browser origins permitted to call this API.
+
+    Empty by default, which installs no CORS middleware at all: a service with
+    no browser client should not be advertising cross-origin access. The M9
+    dashboard runs on a Vite dev server at a different port, so it needs its
+    origin listed explicitly -- a wildcard is never used, because combined with
+    credentialed requests it is exactly the misconfiguration CORS exists to
+    prevent.
+    """
 
     # ------------------------------------------------------- observability --
     otel_enabled: bool = False
