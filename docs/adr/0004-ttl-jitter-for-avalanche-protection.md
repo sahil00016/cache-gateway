@@ -64,19 +64,50 @@ correctly.
 
 ### Avalanche scenario (1000 warm keys, 60s TTL, 400 RPS)
 
+Measured 2026-10-05, 1,000 warm keys, 60s TTL, 4 workers, 3 runs per arm,
+median reported. Full method and raw data in
+[benchmarks/AVALANCHE.md](../../benchmarks/AVALANCHE.md).
+
 **Without jitter** (`CACHE_TTL_JITTER_PCT=0`):
-- All 1000 keys expire at t=60s
-- DB QPS spike: TBD queries/second (expect ~400 QPS = 100% of traffic)
-- Spike duration: ~1-2 seconds
-- p99 latency spike: TBD ms
+- **Peak DB QPS: 113.0**
+- Load elevated above 20 QPS for 12 seconds
+- Ramp: 1 → 38 → 123 QPS in two seconds
+- p99 latency: 2,581 ms
 
 **With 10% jitter** (`CACHE_TTL_JITTER_PCT=10`):
-- Keys expire over 60-66s window (spread over 6 seconds)
-- DB QPS: TBD queries/second (expect gradual rise, not a spike)
-- Spike smoothed: TBD% reduction in peak QPS
-- p99 latency: TBD ms (no spike)
+- **Peak DB QPS: 91.0 — a 19.5% reduction**
+- Load elevated above 20 QPS for 14 seconds
+- Ramp: 5 → 13 → 34 → 51 → 75 → 87 QPS over six seconds
+- p99 latency: 2,690 ms
 
-*(Actual numbers to be filled after benchmark run)*
+**Total database queries: 1,081 without jitter, 1,134 with.** Unchanged, and
+necessarily so — every key still expires once and is re-fetched once. Jitter
+redistributes load in time; it does not reduce it. Any claim that jitter cuts
+total queries would be wrong.
+
+### Three corrections to the predictions above
+
+**The expected ~400 QPS spike did not occur; peak was 113.** The prediction
+assumed all 1,000 keys expire at one instant and are all immediately re-read.
+Neither holds: the warm phase takes ~5s to write 1,000 keys, so even at zero
+jitter their expiries are already spread over ~5s, and a key is only re-queried
+when traffic happens to sample it (~every 2.5s at 400 req/s over 1,000 keys).
+
+**The improvement is 19.5%, not a transformation from "spike" to "gradual
+rise".** Both effects above pre-smooth the unprotected arm, so this figure is a
+**lower bound** on jitter's value rather than an upper one. A production
+avalanche — a cache-warm script, a mass invalidation, a cold start — writes keys
+far closer together and jitter would matter more.
+
+**Latency did not improve: p99 is ~2.6s in both arms.** A 19.5% peak reduction
+is not enough to lift the service out of saturation, so the tail stays dominated
+by queueing against a 25-connection pool. This is the same lesson as ADR-0009
+and the M2 baseline: these protections exist to move **database load**, and
+latency only follows once the database is no longer the bottleneck.
+
+The decision stands. Jitter costs nothing — no latency, no dependency, no new
+failure mode — and measurably flattens the wave. It does not eliminate
+avalanche, and this ADR should not have implied it would.
 
 ### Jitter bounds verification
 

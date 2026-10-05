@@ -3,13 +3,23 @@
 **Status:** Accepted
 **Date:** 2026-09-28
 **Milestone:** M6
+**Amended:** 2026-10-05 — benchmarked. The decision holds and the protected-side
+prediction was correct, but the "500 duplicate queries" baseline was overstated
+by more than an order of magnitude and the headline reduction is 86–90%, not
+99.2%. Corrected in place below; original claims left visible.
 
 ## Context
 
 Cache stampede occurs when one **hot key** expires and many concurrent requests
 miss the cache simultaneously. Without protection, every request issues a
-duplicate database query. With 500 concurrent requests for the same expired key,
-the database takes 500 identical queries in rapid succession.
+duplicate database query.
+
+The intuitive model is that 500 concurrent requests produce 500 identical
+queries. That is wrong, and measuring it showed why: duplicates can only accrue
+while the key is absent from cache, so the count is roughly
+`arrival rate × miss window`, not the client count. For this service's ~2.5ms
+lookup the measured depth is ~18.7 duplicates per expiry. See **Measured
+results**.
 
 Unlike avalanche (many keys expiring together), a stampede involves one key and
 many concurrent requests. The fix: **request coalescing** — deduplicate concurrent
@@ -98,8 +108,9 @@ All verify the dict is empty after the request completes.
 ## The per-worker limitation
 
 **The coalescer lives in process memory.** With 4 uvicorn workers, there are 4
-independent coalescers. A hot-key expiry with 500 concurrent requests yields
-**up to 4 duplicate queries** (one per worker), not 1.
+independent coalescers. A hot-key expiry yields **up to 4 duplicate queries**
+(one per worker), not 1 — measured at ~2.5, since not every worker receives a
+request inside each miss window.
 
 This is not a bug to hide — it's the most interesting architectural fact in the
 milestone.
@@ -108,27 +119,67 @@ milestone.
 
 | Configuration | Duplicate queries per stampede | Reduction |
 |---|---|---|
-| No coalescing | 500 (one per request) | baseline |
-| Coalescer only | **up to 4** (one per worker) | **99.2%** |
-| Coalescer + Redis lock | 1 (cross-worker) | 99.8% |
+| No coalescing | **~18.7 measured** (predicted 500) | baseline |
+| Coalescer only | **~2.5 measured** (predicted up to 4) | **86.6%** (predicted 99.2%) |
+| Coalescer + Redis lock | 1 (cross-worker), not implemented | ~95% |
 
-**The honest conclusion:** 4 duplicate queries instead of 500 is already a 99.2%
-reduction. The Redis distributed lock buys the last 3 queries at the cost of
-added latency and a new failure mode.
+**The honest conclusion, corrected:** ~2.5 duplicate queries instead of ~18.7 is
+an 86.6% reduction — 89.9% when normalised per request. The *protected* side of
+the original prediction was right: 2.5 sits below the 4-worker ceiling, exactly
+as the per-worker argument says it should. The *unprotected* side was wrong by a
+factor of ~27, and that is where the missing 13 percentage points went.
+
+Why 500 was never reachable is explained under **Measured results** below.
 
 ### Measured results
 
-**Stampede scenario:** 500 concurrent requests for one expired hot key, 4 workers
+**Stampede scenario:** 200 VUs with no think time, all on one key, 5s TTL so
+each 60s run contains ~12 expiry events. 4 workers. 3 runs per arm. Full method
+and raw data in [benchmarks/STAMPEDE.md](../../benchmarks/STAMPEDE.md).
 
-**Without coalescing** (`COALESCE_ENABLED=false`):
-- DB queries during stampede: TBD (expect ~500)
-- All concurrent requests hit the database
+| | No coalescing | With coalescing |
+|---|---|---|
+| DB queries (60s, median) | 224 | **30** |
+| DB queries per 1,000 requests | 14.49 | **1.47** |
+| Duplicate queries per expiry | ~18.7 | **~2.5** |
+| `coalesced_requests_total` | 0 | **~470 per run** |
+| p99 latency range | 1,372 – **23,852 ms** | 1,051 – 1,150 ms |
 
-**With coalescing** (`COALESCE_ENABLED=true`):
-- DB queries during stampede: TBD (expect 1-4)
-- 99%+ of duplicate queries eliminated
+**89.9% of duplicate queries eliminated**, normalised per request.
 
-*(Actual numbers to be filled after benchmark run)*
+### Why the predicted 500 never appeared
+
+A stampede can only form inside the window where the key is absent from cache:
+from the first miss until the first query writes the value back. For a
+single-row primary key lookup that window is ~2.5ms (BASELINE.md). Therefore
+
+```
+duplicate queries  ≈  arrival rate × miss window
+```
+
+The magnitude is set by **arrival rate**, not by the number of clients. Reaching
+500 duplicates against a 2.5ms query would require ~200,000 req/s. This
+hardware cannot generate that, so the figure was unreachable rather than merely
+unmeasured.
+
+The original scenario fired 500 VUs with one iteration each. k6 takes seconds to
+start 500 VUs, so the burst spread over seconds and almost none of it landed
+inside a 2.5ms window — the two arms measured 64 and 57 queries, a difference
+inside the noise, with 23 requests coalescing across a whole run. The scenario
+was measuring background traffic on other keys.
+
+### What this changes about the Redis lock argument
+
+The reasoning below — that the remaining duplicates are not meaningful load, and
+the lock's latency and failure modes are not worth paying — **survives, and is
+in fact stronger**. The residual is ~2.5 queries per expiry, not 4, against a
+baseline of ~19 rather than 500. The lock would buy back ~1.5 queries per
+expiry.
+
+But note the corollary the original text gestured at without naming: since
+stampede depth is `arrival rate × miss window`, a **slow** query is far more
+dangerous than many clients. The lock becomes worth its cost when the query is
+expensive — not when the client count is high. That is the condition to watch.
 
 ## Redis distributed lock (not implemented)
 
@@ -157,7 +208,9 @@ Document this in the README as a known limitation with a clear upgrade path.
 ## Consequences
 
 **Now.**
-- Cache stampedes are reduced by 99.2% (500 duplicates → 4)
+- Cache stampedes are reduced by **86.6%** (measured ~18.7 duplicates → ~2.5);
+  89.9% normalised per request. The originally claimed 99.2% assumed a 500-deep
+  stampede that this hardware cannot produce.
 - No added latency on cache misses (coalescer is in-process)
 - No new failure modes (unlike the Redis lock)
 - Per-worker limitation is measured and documented, not hidden
@@ -199,9 +252,10 @@ demonstrates understanding of the pattern, which is the point.
 
 **Integration test strategy:**
 - Start 4 workers
-- Fire 500 concurrent requests for one expired key
+- Hold 200 concurrent requests on one key with a short TTL, so each run contains
+  ~12 expiry events (a single burst does not produce a stampede — see above)
 - Count DB queries via `database_queries_total{operation="get_by_id"}`
-- Verify: without coalescing ~500 queries, with coalescing 1-4 queries
+- Verify: ~18.7 duplicates per expiry without coalescing, ~2.5 with
 
 ## References
 
