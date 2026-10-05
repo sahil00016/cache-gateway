@@ -1,123 +1,109 @@
 // Cache stampede scenario.
 //
-// Demonstrates what happens when one hot key expires under concurrent load. The
-// scenario warms a single key, waits for it to expire, then fires hundreds of
-// concurrent requests for that same key. Without coalescing, every request issues
-// a duplicate DB query. With coalescing: 1 query per worker (still up to 4
-// queries with 4 workers, not 1 — this is the per-worker limitation).
+// A stampede is many concurrent requests for ONE key that has just expired.
+// Without coalescing each of them issues its own identical database query;
+// with coalescing one request per worker queries and the rest wait on it.
 //
-// This is M6's headline demonstration: the "before" run (coalescing disabled)
-// shows N duplicate queries = N concurrent requests, and the "after" run
-// (coalescing enabled) shows up to 4 queries (one per worker), regardless of
-// concurrency level.
+// ---------------------------------------------------------------------------
+// Why this scenario was redesigned
+// ---------------------------------------------------------------------------
+// The original version fired a one-shot burst: 500 VUs, one iteration each,
+// scheduled 5s after a 60s TTL expired. It never produced a stampede, and the
+// measurements said so plainly -- the protected and unprotected arms came out
+// at 57 and 64 database queries, a difference inside the noise, and across a
+// whole protected run only 23 requests ever waited on a leader.
+//
+// The reason is arithmetic, not a coding mistake. A stampede can only form
+// inside the window where the key is missing from the cache: from the first
+// miss until the first query writes the value back. For a single-row primary
+// key lookup that window is about 2.5ms (see BASELINE.md). The number of
+// duplicate queries is therefore roughly
+//
+//     arrival rate x miss window
+//
+// and NOT the number of clients. k6 needs seconds to start 500 VUs, so the
+// burst arrived spread over seconds and almost nothing landed inside a 2.5ms
+// window. Reaching 500 duplicates against a 2.5ms query would need ~200,000
+// requests/second, which this hardware cannot generate.
+//
+// Two changes make the effect observable without pretending otherwise:
+//
+//   1. CONCURRENCY INSTEAD OF A BURST. Constant VUs with no sleep, all on one
+//      key. Every VU has a request in flight at all times, so the instant the
+//      key expires there are BURST_VUS requests already in the miss window.
+//      Concurrency, not arrival rate, becomes the stampede width -- which is
+//      the variable the coalescer actually acts on.
+//
+//   2. MANY EXPIRIES INSTEAD OF ONE. A 5s TTL over a 60s run gives ~12 expiry
+//      events per run rather than one, so the result is an average over a
+//      dozen stampedes instead of a single sample.
+//
+// Background traffic on other keys is gone: it contributed most of what the
+// original 10s measurement window was counting.
 //
 // Usage:
-//   # Without coalescing (every request hits DB):
+//   # Without coalescing (every concurrent miss queries the database):
 //   COALESCE_ENABLED=false
-//   k6 run -e SCENARIO=stampede-no-coalesce -e HOT_KEY=42 benchmarks/scenarios/stampede.js
+//   k6 run -e SCENARIO=stampede-no-coalesce benchmarks/scenarios/stampede.js
 //
-//   # With coalescing (1 query per worker):
+//   # With coalescing (one query per worker per expiry):
 //   COALESCE_ENABLED=true
-//   k6 run -e SCENARIO=stampede-with-coalesce -e HOT_KEY=42 benchmarks/scenarios/stampede.js
+//   k6 run -e SCENARIO=stampede-with-coalesce benchmarks/scenarios/stampede.js
+//
+// The database query count comes from the service's own counters, captured by
+// benchmarks/run.py. k6 cannot see it.
 //
 // Env:
 //   BASE_URL    default http://localhost:8010
-//   SCENARIO    result label, default 'stampede'
-//   HOT_KEY     the product ID to target, default 42
-//   TTL         cache TTL (must match service config), default 60
-//   RATE        sustained background load (RPS), default 50
-//   BURST_VUS   number of VUs for the stampede burst, default 500
+//   SCENARIO    result label
+//   HOT_KEY     the product id every request targets, default 42
+//   TTL         service cache TTL in seconds, must match config, default 5
+//   BURST_VUS   concurrent requests in flight, default 200
+//   DURATION    measured window, default 60s
 
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 import { textSummary } from 'https://jslib.k6.io/k6-summary/0.1.0/index.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8010';
 const HOT_KEY = parseInt(__ENV.HOT_KEY || '42', 10);
-const TTL = parseInt(__ENV.TTL || '60', 10);
-const RATE = parseInt(__ENV.RATE || '50', 10);
-const BURST_VUS = parseInt(__ENV.BURST_VUS || '500', 10);
+const TTL = parseInt(__ENV.TTL || '5', 10);
+const BURST_VUS = parseInt(__ENV.BURST_VUS || '200', 10);
+const DURATION = __ENV.DURATION || '60s';
 
 const requests = new Counter('stampede_requests');
 const readLatency = new Trend('stampede_read_ms', true);
 
 export const options = {
   scenarios: {
-    // Phase 1: Warm the hot key. Fire one request to populate the cache.
-    warmup: {
-      executor: 'per-vu-iterations',
-      vus: 1,
-      iterations: 1,
-      tags: { phase: 'warmup' },
-      exec: 'warm',
-    },
-    // Phase 2: Hold light background load for longer than TTL. This keeps the
-    // service alive and allows us to observe the exact moment the key expires.
-    background: {
-      executor: 'constant-arrival-rate',
-      rate: RATE,
-      timeUnit: '1s',
-      duration: `${TTL + 30}s`,
-      startTime: '5s',
-      preAllocatedVUs: 10,
-      maxVUs: 20,
-      tags: { phase: 'background' },
-      exec: 'backgroundLoad',
-    },
-    // Phase 3: The stampede. At t=TTL+5s (after the hot key has expired), fire
-    // BURST_VUS concurrent requests for the expired key. Without coalescing,
-    // this produces BURST_VUS duplicate queries. With coalescing: up to 4
-    // queries (one per worker).
-    stampede: {
-      executor: 'per-vu-iterations',
+    // Constant VUs with no sleep: each VU keeps exactly one request in flight,
+    // so concurrency is pinned at BURST_VUS for the whole run and every expiry
+    // is met by BURST_VUS simultaneous misses.
+    hammer: {
+      executor: 'constant-vus',
       vus: BURST_VUS,
-      iterations: 1,
-      startTime: `${TTL + 5}s`,
-      maxDuration: '10s',
-      tags: { phase: 'stampede' },
-      exec: 'stampede',
+      duration: DURATION,
+      exec: 'hammer',
     },
   },
   thresholds: {
-    // No hard thresholds — the duplicate query count is what we're measuring,
-    // and that's extracted from the DB's metrics, not from k6's counters.
-    'http_req_failed{phase:stampede}': ['rate<0.01'],
+    // The duplicate query count is the result, not a pass/fail criterion.
+    // Only transport failures are a failure.
+    http_req_failed: ['rate<0.01'],
   },
   summaryTrendStats: ['avg', 'min', 'med', 'p(95)', 'p(99)', 'max'],
 };
 
-export function warm() {
-  // Warm the hot key so it's in the cache with a fresh TTL
-  http.get(`${BASE_URL}/v1/products/${HOT_KEY}`, {
-    tags: { name: 'GET /v1/products/:id (warm)' },
-  });
-}
-
-export function backgroundLoad() {
-  // Light background traffic on random keys to keep the service alive
-  const randomId = Math.floor(Math.random() * 1000) + 1;
-  http.get(`${BASE_URL}/v1/products/${randomId}`, {
-    tags: { name: 'GET /v1/products/:id (background)' },
-  });
-}
-
-export function stampede() {
-  // Fire one request for the hot key. This is timed to happen immediately after
-  // the key expires, so with BURST_VUS concurrent requests, we expect:
-  // - Without coalescing: BURST_VUS DB queries
-  // - With coalescing: up to 4 DB queries (one per worker)
-  requests.add(1);
-
+export function hammer() {
   const res = http.get(`${BASE_URL}/v1/products/${HOT_KEY}`, {
-    tags: { name: 'GET /v1/products/:id (stampede)' },
+    tags: { name: 'GET /v1/products/:id (hot key)' },
   });
 
+  requests.add(1);
   readLatency.add(res.timings.duration);
 
-  check(res, {
-    'status is 200': (r) => r.status === 200,
-  });
+  check(res, { 'status is 200': (r) => r.status === 200 });
 }
 
 export function handleSummary(data) {
@@ -125,7 +111,9 @@ export function handleSummary(data) {
   const scenario = __ENV.SCENARIO || 'stampede';
   const m = data.metrics;
 
-  const stampedeRequests = m.stampede_requests ? m.stampede_requests.values.count : 0;
+  const total = m.stampede_requests ? m.stampede_requests.values.count : 0;
+  const durationS = parseInt(DURATION, 10);
+  const expiries = TTL > 0 ? Math.floor(durationS / TTL) : 0;
 
   const out = {
     scenario: scenario,
@@ -134,24 +122,28 @@ export function handleSummary(data) {
     config: {
       base_url: BASE_URL,
       hot_key: HOT_KEY,
-      ttl: TTL,
-      background_rate: RATE,
-      burst_vus: BURST_VUS,
+      ttl_seconds: TTL,
+      concurrent_vus: BURST_VUS,
+      duration: DURATION,
+      expected_expiry_events: expiries,
     },
     results: {
-      stampede_requests: stampedeRequests,
-      total_requests: m.http_reqs ? m.http_reqs.values.count : null,
+      requests: total,
       rps: m.http_reqs ? Number(m.http_reqs.values.rate.toFixed(1)) : null,
       error_rate: m.http_req_failed ? m.http_req_failed.values.rate : null,
-      latency_ms: m.http_req_duration ? {
-        avg: Number(m.http_req_duration.values.avg.toFixed(2)),
-        med: Number(m.http_req_duration.values.med.toFixed(2)),
-        p95: Number(m.http_req_duration.values['p(95)'].toFixed(2)),
-        p99: Number(m.http_req_duration.values['p(99)'].toFixed(2)),
-        max: Number(m.http_req_duration.values.max.toFixed(2)),
-      } : null,
+      latency_ms: m.http_req_duration
+        ? {
+            avg: Number(m.http_req_duration.values.avg.toFixed(2)),
+            med: Number(m.http_req_duration.values.med.toFixed(2)),
+            p95: Number(m.http_req_duration.values['p(95)'].toFixed(2)),
+            p99: Number(m.http_req_duration.values['p(99)'].toFixed(2)),
+            max: Number(m.http_req_duration.values.max.toFixed(2)),
+          }
+        : null,
     },
-    note: 'The key metric is DB query count during the stampede phase, extracted from Postgres/Prometheus metrics, not from k6.',
+    note:
+      'Duplicate query count is the headline and comes from ' +
+      'cache_gateway_database_queries_total in the companion *-metrics.json, not from k6.',
   };
 
   return {

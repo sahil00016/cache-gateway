@@ -26,6 +26,12 @@ import http from 'k6/http';
 import { check } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 import { absentKey } from '../lib/keys.js';
+
+// Every response in this scenario is a 404 -- that is the definition of a
+// penetration attempt. k6's default failure rule (status >= 400) would score a
+// perfect run as 100% failed, so the expectation is restated here. Set at
+// module scope: it must apply to every VU's runtime.
+http.setResponseCallback(http.expectedStatuses(404));
 import { textSummary } from 'https://jslib.k6.io/k6-summary/0.1.0/index.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8010';
@@ -62,10 +68,13 @@ export const options = {
     },
   },
   thresholds: {
-    // All requests MUST 404 -- that is the point of the scenario. Any 200
-    // means we asked for an ID that actually exists, which invalidates the test.
+    // All requests MUST 404 -- that is the point of the scenario. Any other
+    // status means we asked for an ID that actually exists, which invalidates
+    // the test. With the response callback above, http_req_failed counts
+    // anything that is NOT a 404, so rate==0 is the correct invariant.
+    // (The earlier 'http_req_status_code' threshold named a metric k6 does not
+    // define, which aborted the run before it sent a request.)
     'http_req_failed{phase:measured}': ['rate==0'],
-    'http_req_status_code{phase:measured}': ['rate==404'],
   },
   summaryTrendStats: ['avg', 'min', 'med', 'p(95)', 'p(99)', 'max'],
 };
@@ -87,7 +96,12 @@ export function attack() {
     'status is 404 (penetration attempt)': (r) => r.status === 404,
   });
 
-  // Bloom filter rejects will be fast. Track them separately.
+  // A sub-2ms response is *probably* a Bloom reject. This is a latency proxy,
+  // not a measurement: it cannot distinguish a Bloom reject from a fast Redis
+  // negative lookup, and it misclassifies under load. The authoritative reject
+  // count comes from the service's own cache_operations_total{outcome=
+  // bloom_reject} counter, captured by benchmarks/run.py. Kept only as a
+  // cross-check that the two broadly agree.
   if (res.timings.duration < 2.0) {
     blocked.add(1);
   }
@@ -120,9 +134,10 @@ export function handleSummary(data) {
       } : null,
       penetration: {
         total_attempts: totalRequests,
-        blocked_by_bloom: blockedCount,
-        blocked_pct: Number(blockedPct),
-        reached_db_pct: Number((100 - blockedPct).toFixed(1)),
+        // Latency-derived proxies -- see the comment in attack(). The real
+        // numbers live in the companion *-metrics.json written by run.py.
+        fast_responses_under_2ms: blockedCount,
+        fast_response_pct: Number(blockedPct),
       },
     },
   };

@@ -105,9 +105,29 @@ export function warm() {
 // Measured phase: request keys from the warm set. As keys expire, they become
 // cache misses and hit the database. The spike timing and shape depend on jitter.
 export function read() {
-  // Round-robin through the warm set so every key gets roughly equal traffic.
-  const offset = requests.add(1) % WARMUP_KEYS;
-  const id = WARM_START + offset;
+  // Sample the warm set uniformly at random.
+  //
+  // Two earlier versions of this line both made the expiry wave unobservable:
+  //
+  //   1. `requests.add(1) % WARMUP_KEYS` -- k6's Counter.add() returns a
+  //      boolean, not the running total, so this was `true % 1000` === 1 every
+  //      iteration and the entire measured phase hammered product id 2.
+  //
+  //   2. A per-VU incrementing cursor. Each VU got its own runtime and its own
+  //      cursor, but every VU advances at the same ~8 iterations/sec, so the
+  //      whole fleet marched in lockstep: collectively it touched only ~8
+  //      distinct keys per second, a single pointer sweeping the keyspace.
+  //      Measured result: zero DB queries from t=6s to t=60s, then a flat 8
+  //      qps forever -- no spike at any point, because the 1,000 warm keys
+  //      were never in play at the same time.
+  //
+  // Random sampling is what the scenario actually needs. At 400 rps over 1,000
+  // keys every key is requested roughly every 2.5s, so all 1,000 are live in
+  // the working set continuously. When they expire together the misses land
+  // together, which is the avalanche this scenario exists to show.
+  const id = WARM_START + Math.floor(Math.random() * WARMUP_KEYS);
+
+  requests.add(1);
 
   const res = http.get(`${BASE_URL}/v1/products/${id}`, {
     tags: { name: 'GET /v1/products/:id' },
