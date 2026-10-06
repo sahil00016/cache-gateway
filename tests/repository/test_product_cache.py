@@ -13,6 +13,7 @@ import pytest
 from redis.exceptions import RedisError
 
 from src.common.settings import Settings
+from src.core.runtime_flags import init_runtime_flags
 from src.repository.product_cache import ProductCacheRepository
 from src.schema.product import ProductRead
 
@@ -94,6 +95,10 @@ async def test_set_uses_the_configured_key_prefix(cache_settings: Settings) -> N
 
 
 async def test_set_applies_the_configured_ttl_with_zero_jitter(cache_settings: Settings) -> None:
+    # The jitter percentage is read from the runtime overlay so the avalanche
+    # demo can change it without a restart, so the overlay is what this test
+    # must pin -- not the Settings object alone.
+    init_runtime_flags(cache_settings)
     redis = FakeRedis()
     cache = ProductCacheRepository(redis, cache_settings)  # type: ignore[arg-type]
 
@@ -106,6 +111,7 @@ async def test_set_applies_the_configured_ttl_with_zero_jitter(cache_settings: S
 
 async def test_set_ttl_never_exceeds_the_configured_jitter_ceiling(settings: Settings) -> None:
     jittered = settings.model_copy(update={"cache_ttl_seconds": 60, "cache_ttl_jitter_pct": 10})
+    init_runtime_flags(jittered)
     redis = FakeRedis()
     cache = ProductCacheRepository(redis, jittered)  # type: ignore[arg-type]
 

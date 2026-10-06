@@ -10,19 +10,23 @@ problem (see ADR-0003): when too many deleted products have accumulated as
 false positives, rebuild the filter from the current truth in Postgres.
 """
 
+import os
 from datetime import UTC, datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 
 from src.api.deps import SessionDep, SettingsDep
 from src.core.envelope import SuccessResponse
 from src.core.metrics import MULTIPROCESS_ENABLED, build_scrape_registry
+from src.core.runtime_flags import get_runtime_flags, update_runtime_flags
 from src.schema.admin import (
     BloomRebuildResult,
     BloomStats,
     EffectiveSettings,
     MetricSample,
     MetricsSnapshot,
+    RuntimeFlagsPatch,
+    RuntimeFlagsState,
 )
 from src.service.bloom import get_bloom_filter
 
@@ -48,15 +52,15 @@ async def stats(settings: SettingsDep) -> SuccessResponse[EffectiveSettings]:
             environment=settings.environment.value,
             web_concurrency=settings.web_concurrency,
             write_strategy=settings.write_strategy.value,
-            cache_invalidate_on_write=settings.cache_invalidate_on_write,
+            cache_invalidate_on_write=get_runtime_flags().cache_invalidate_on_write,
             cache_ttl_seconds=settings.cache_ttl_seconds,
-            cache_ttl_jitter_pct=settings.cache_ttl_jitter_pct,
+            cache_ttl_jitter_pct=get_runtime_flags().cache_ttl_jitter_pct,
             cache_ttl_jitter_seconds=settings.cache_ttl_jitter_seconds,
             cache_key_prefix=settings.cache_key_prefix,
-            bloom_enabled=settings.bloom_enabled,
+            bloom_enabled=get_runtime_flags().bloom_enabled,
             bloom_expected_items=settings.bloom_expected_items,
             bloom_fp_rate=settings.bloom_fp_rate,
-            coalesce_enabled=settings.coalesce_enabled,
+            coalesce_enabled=get_runtime_flags().coalesce_enabled,
             redis_lock_enabled=settings.redis_lock_enabled,
             redis_lock_ttl_ms=settings.redis_lock_ttl_ms,
         )
@@ -140,3 +144,81 @@ async def metrics_json() -> SuccessResponse[MetricsSnapshot]:
             samples=samples,
         )
     )
+
+
+def _flags_state(settings: SettingsDep) -> RuntimeFlagsState:
+    """Build the flag response for the worker handling this request.
+
+    Args:
+        settings: Injected application settings.
+
+    Returns:
+        This worker's current flag values.
+    """
+    flags = get_runtime_flags()
+    return RuntimeFlagsState(
+        bloom_enabled=flags.bloom_enabled,
+        coalesce_enabled=flags.coalesce_enabled,
+        cache_invalidate_on_write=flags.cache_invalidate_on_write,
+        cache_ttl_jitter_pct=flags.cache_ttl_jitter_pct,
+        worker_pid=os.getpid(),
+        web_concurrency=settings.web_concurrency,
+    )
+
+
+@router.get(
+    "/flags",
+    response_model=SuccessResponse[RuntimeFlagsState],
+    summary="Protection flags as the answering worker holds them",
+)
+async def read_flags(settings: SettingsDep) -> SuccessResponse[RuntimeFlagsState]:
+    """Return the live protection flags for the worker that answers.
+
+    Args:
+        settings: Injected application settings.
+
+    Returns:
+        The flags, with the answering worker's PID.
+    """
+    return SuccessResponse[RuntimeFlagsState](data=_flags_state(settings))
+
+
+@router.patch(
+    "/flags",
+    response_model=SuccessResponse[RuntimeFlagsState],
+    summary="Switch a protection on or off without restarting",
+)
+async def patch_flags(
+    patch: RuntimeFlagsPatch, settings: SettingsDep
+) -> SuccessResponse[RuntimeFlagsState]:
+    """Apply a partial update to this worker's protection flags.
+
+    These flags exist so a failure mode can be demonstrated live. They are
+    per-process: this request reaches one worker, and the others keep their
+    previous values until they are asked too. ``web_concurrency`` in the
+    response says how many workers there are, so a caller can repeat the
+    request until every worker agrees.
+
+    Args:
+        patch: Fields to change. Omitted fields are left alone.
+        settings: Injected application settings.
+
+    Returns:
+        The flags after the update, for the worker that answered.
+
+    Raises:
+        HTTPException: If the patch names no field, or carries a rejected value.
+    """
+    changes = patch.model_dump(exclude_none=True)
+    if not changes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No flags given. Send at least one field to change.",
+        )
+
+    try:
+        update_runtime_flags(**changes)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return SuccessResponse[RuntimeFlagsState](data=_flags_state(settings))

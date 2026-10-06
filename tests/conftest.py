@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from src.common.settings import Settings, get_settings
+from src.core.runtime_flags import reset_runtime_flags
 from src.main import create_app
 from src.service.bloom import init_bloom_filter
 from src.service.coalescer import init_coalescer
@@ -76,3 +77,16 @@ async def client(settings: Settings) -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
         yield http_client
+
+
+@pytest.fixture(autouse=True)
+def _isolate_runtime_flags() -> Iterator[None]:
+    """Clear the runtime flag overlay around every test.
+
+    The overlay is process-global by design (see src/core/runtime_flags.py), so
+    without this a test that flips a protection leaks that state into every
+    test that runs after it -- and the order would decide the result.
+    """
+    reset_runtime_flags()
+    yield
+    reset_runtime_flags()

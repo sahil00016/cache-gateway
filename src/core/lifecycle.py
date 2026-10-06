@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.common.settings import get_settings
 from src.core.logging import configure_logging
+from src.core.runtime_flags import init_runtime_flags
 from src.db.engine import dispose_engine, get_engine, init_engine
 from src.db.redis import dispose_redis, init_redis
 from src.service.bloom import init_bloom_filter
@@ -35,6 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     del app  # part of the protocol, not needed
 
     settings = get_settings()
+    init_runtime_flags(settings)
     configure_logging(settings)
     logger.info(
         "starting",

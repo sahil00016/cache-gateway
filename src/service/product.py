@@ -25,8 +25,8 @@ the thundering-herd behaviour a batch of cold keys produces, which is M6's
 subject and needs an uncached baseline of its own.
 """
 
-from src.common.settings import get_settings
 from src.core.exceptions import NotFoundError
+from src.core.runtime_flags import get_runtime_flags
 from src.repository.product import ProductRepository
 from src.repository.product_cache import ProductCacheRepository
 from src.schema.product import ProductRead, ProductUpdate
@@ -84,8 +84,7 @@ class ProductService:
         # M6: Request coalescing for stampede protection
         # If coalescing is enabled, multiple concurrent requests for the same ID
         # will coalesce into one DB query. If disabled, every request hits the DB.
-        settings = get_settings()
-        if settings.coalesce_enabled:
+        if get_runtime_flags().coalesce_enabled:
             coalescer = get_coalescer()
             cache_key = str(product_id)
             return await coalescer.coalesce(cache_key, lambda: self._load_and_cache(product_id))
@@ -186,7 +185,7 @@ class ProductService:
         # Invalidate cache (fail-open: write already succeeded). The toggle
         # exists so the un-invalidated case can be measured, not because
         # skipping invalidation is ever a reasonable production setting.
-        if get_settings().cache_invalidate_on_write:
+        if get_runtime_flags().cache_invalidate_on_write:
             await self._cache.delete(product_id)
 
         return ProductRead.model_validate(product)
@@ -215,7 +214,7 @@ class ProductService:
         # Invalidate cache (fail-open: write already succeeded). The toggle
         # exists so the un-invalidated case can be measured, not because
         # skipping invalidation is ever a reasonable production setting.
-        if get_settings().cache_invalidate_on_write:
+        if get_runtime_flags().cache_invalidate_on_write:
             await self._cache.delete(product_id)
 
         # Note: Bloom filter cannot remove the key. It becomes a false positive

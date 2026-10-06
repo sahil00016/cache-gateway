@@ -103,3 +103,27 @@ class MetricsSnapshot(BaseModel):
         description="True when values are aggregated across gunicorn workers (ADR-0007)."
     )
     samples: list[MetricSample] = Field(description="Every sample in the registry.")
+
+
+class RuntimeFlagsState(BaseModel):
+    """The four protection flags as this worker currently holds them."""
+
+    bloom_enabled: bool = Field(description="Consult the Bloom filter on reads.")
+    coalesce_enabled: bool = Field(description="Coalesce concurrent loads of the same key.")
+    cache_invalidate_on_write: bool = Field(description="Delete the cached entry on write.")
+    cache_ttl_jitter_pct: int = Field(description="Jitter as a percentage of the base TTL.")
+    worker_pid: int = Field(
+        description="PID of the worker that answered. These flags are per-process."
+    )
+    web_concurrency: int = Field(
+        description="Worker count. A PATCH reaches one worker; this says how many exist."
+    )
+
+
+class RuntimeFlagsPatch(BaseModel):
+    """A partial update to the runtime flags. Omitted fields are left alone."""
+
+    bloom_enabled: bool | None = None
+    coalesce_enabled: bool | None = None
+    cache_invalidate_on_write: bool | None = None
+    cache_ttl_jitter_pct: int | None = Field(None, ge=0, le=100)

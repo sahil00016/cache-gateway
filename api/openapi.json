@@ -525,6 +525,104 @@
         "title": "ReadinessResult",
         "type": "object"
       },
+      "RuntimeFlagsPatch": {
+        "description": "A partial update to the runtime flags. Omitted fields are left alone.",
+        "properties": {
+          "bloom_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bloom Enabled"
+          },
+          "cache_invalidate_on_write": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Invalidate On Write"
+          },
+          "cache_ttl_jitter_pct": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Ttl Jitter Pct"
+          },
+          "coalesce_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coalesce Enabled"
+          }
+        },
+        "title": "RuntimeFlagsPatch",
+        "type": "object"
+      },
+      "RuntimeFlagsState": {
+        "description": "The four protection flags as this worker currently holds them.",
+        "properties": {
+          "bloom_enabled": {
+            "description": "Consult the Bloom filter on reads.",
+            "title": "Bloom Enabled",
+            "type": "boolean"
+          },
+          "cache_invalidate_on_write": {
+            "description": "Delete the cached entry on write.",
+            "title": "Cache Invalidate On Write",
+            "type": "boolean"
+          },
+          "cache_ttl_jitter_pct": {
+            "description": "Jitter as a percentage of the base TTL.",
+            "title": "Cache Ttl Jitter Pct",
+            "type": "integer"
+          },
+          "coalesce_enabled": {
+            "description": "Coalesce concurrent loads of the same key.",
+            "title": "Coalesce Enabled",
+            "type": "boolean"
+          },
+          "web_concurrency": {
+            "description": "Worker count. A PATCH reaches one worker; this says how many exist.",
+            "title": "Web Concurrency",
+            "type": "integer"
+          },
+          "worker_pid": {
+            "description": "PID of the worker that answered. These flags are per-process.",
+            "title": "Worker Pid",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bloom_enabled",
+          "coalesce_enabled",
+          "cache_invalidate_on_write",
+          "cache_ttl_jitter_pct",
+          "worker_pid",
+          "web_concurrency"
+        ],
+        "title": "RuntimeFlagsState",
+        "type": "object"
+      },
       "SuccessResponse_BloomRebuildResult_": {
         "properties": {
           "data": {
@@ -613,6 +711,24 @@
           "data"
         ],
         "title": "SuccessResponse[ProductRead]",
+        "type": "object"
+      },
+      "SuccessResponse_RuntimeFlagsState_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RuntimeFlagsState"
+          },
+          "success": {
+            "default": true,
+            "description": "Always true.",
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[RuntimeFlagsState]",
         "type": "object"
       },
       "ValidationError": {
@@ -751,6 +867,68 @@
           }
         },
         "summary": "Current Bloom filter statistics",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/flags": {
+      "get": {
+        "description": "Return the live protection flags for the worker that answers.\n\nArgs:\n    settings: Injected application settings.\n\nReturns:\n    The flags, with the answering worker's PID.",
+        "operationId": "read_flags_v1_admin_flags_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_RuntimeFlagsState_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Protection flags as the answering worker holds them",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "description": "Apply a partial update to this worker's protection flags.\n\nThese flags exist so a failure mode can be demonstrated live. They are\nper-process: this request reaches one worker, and the others keep their\nprevious values until they are asked too. ``web_concurrency`` in the\nresponse says how many workers there are, so a caller can repeat the\nrequest until every worker agrees.\n\nArgs:\n    patch: Fields to change. Omitted fields are left alone.\n    settings: Injected application settings.\n\nReturns:\n    The flags after the update, for the worker that answered.\n\nRaises:\n    HTTPException: If the patch names no field, or carries a rejected value.",
+        "operationId": "patch_flags_v1_admin_flags_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeFlagsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_RuntimeFlagsState_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch a protection on or off without restarting",
         "tags": [
           "admin"
         ]

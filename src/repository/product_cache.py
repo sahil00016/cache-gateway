@@ -26,6 +26,7 @@ from redis.exceptions import RedisError
 
 from src.common.settings import Settings
 from src.core.metrics import cache_operations_total
+from src.core.runtime_flags import get_runtime_flags
 from src.schema.product import ProductRead
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,12 @@ class ProductCacheRepository:
         # point: it decorrelates the expiry of keys written around the same
         # time, which is what an avalanche needs to happen. See ADR pending
         # for failure mode 2.
-        jitter = random.uniform(0, self._settings.cache_ttl_jitter_seconds)  # noqa: S311
+        # The percentage is read live rather than from settings, so the
+        # avalanche demo can move it without a restart. cache_ttl_jitter_seconds
+        # on Settings is a computed field and would keep the boot-time value.
+        pct = get_runtime_flags().cache_ttl_jitter_pct
+        ceiling = self._settings.cache_ttl_seconds * pct / 100
+        jitter = random.uniform(0, ceiling)  # noqa: S311
         return round(self._settings.cache_ttl_seconds + jitter)
 
     async def get(self, product_id: int) -> ProductRead | None:

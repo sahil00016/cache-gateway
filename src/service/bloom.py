@@ -126,7 +126,7 @@ class BloomFilterService:
             True if the ID might exist (or if the filter is disabled), False if
             it definitely does not exist.
         """
-        if not self._enabled:
+        if not self._active():
             return True
 
         self._total_lookups += 1
@@ -240,6 +240,25 @@ class BloomFilterService:
             "count": len(product_ids),
             "duration_seconds": round(duration, 3),
         }
+
+    def _active(self) -> bool:
+        """Return whether lookups should consult the filter right now.
+
+        Distinct from ``enabled``: that records whether the filter was *built*
+        at startup, and a filter that was never built cannot answer. This also
+        honours the runtime overlay, so the penetration demo can switch
+        protection off and on without a restart -- and critically, without
+        rebuilding from a million rows on the way back.
+
+        Returns:
+            True when the filter is both built and switched on.
+        """
+        if not self._enabled:
+            return False
+
+        from src.core.runtime_flags import get_runtime_flags  # noqa: PLC0415 -- import cycle
+
+        return get_runtime_flags().bloom_enabled
 
     @property
     def enabled(self) -> bool:
