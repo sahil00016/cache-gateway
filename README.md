@@ -26,11 +26,19 @@ under load, measured, fixed, and measured again.
 | 3 | **Stampede** -- one hot key expires and every concurrent request misses simultaneously. | Hand-built per-worker request coalescing. **Measured: 89.9% fewer duplicate queries**, ~18.7 per expiry → ~2.5. [ADR-0005](docs/adr/0005-request-coalescing-for-stampede-protection.md) · [results](benchmarks/STAMPEDE.md) | **M6 ✓** |
 | 4 | **Consistency** -- a write updates the database but the cache keeps serving the old row. | Cache-aside with delete-on-write. **Measured: median staleness 29.7s → 0.47s**, read-your-own-writes failures 99.5% → 1.3%. [ADR-0006](docs/adr/0006-cache-invalidation-strategy.md) · [results](benchmarks/CONSISTENCY.md) | **M7 ✓** |
 
-Every protection has a flag that disables it, so each failure can be reproduced
-rather than only described: `BLOOM_ENABLED`, `CACHE_TTL_JITTER_PCT`,
-`COALESCE_ENABLED`, `CACHE_INVALIDATE_ON_WRITE`. They are read at process start,
-so changing one needs a restart — the service does not yet support flipping a
-protection on a running instance.
+Every protection can be switched off **on a running instance**, so each failure
+is reproducible rather than only described — `BLOOM_ENABLED`,
+`CACHE_TTL_JITTER_PCT`, `COALESCE_ENABLED`, `CACHE_INVALIDATE_ON_WRITE`, set at
+boot and changeable afterwards through `PATCH /v1/admin/flags` or the
+[dashboard](web/). The flags are per worker, so a change reaches one worker at a
+time; the response reports which, and how many there are.
+
+That it changes behaviour, not just a reported value:
+
+```
+bloom ON    200 absent ids ->   0 reached Postgres
+bloom OFF   200 absent ids -> 200 reached Postgres
+```
 
 **Three of the four reductions above are smaller than this README previously
 claimed.** The numbers were predictions until the benchmarks were run on
@@ -92,8 +100,10 @@ src/
   db/           engine and Redis lifecycle
 scripts/        CI helpers (OpenAPI export, Alembic head check)
 tests/          mirrors src/
-benchmarks/     k6 scenarios, results and graphs
-deploy/         Terraform and compose
+benchmarks/     k6 scenarios, committed results, and the runner that captures
+                service-side counters rather than inferring them from latency
+web/            React dashboard: live metrics and the failure-mode switches
+deploy/         Terraform module and the prod environment
 docs/adr/       one file per non-obvious decision
 ```
 
@@ -128,6 +138,20 @@ drift apart -- which they always do when both are maintained by hand.
 
 **`db_echo` is a first-class setting, not a debug flag.** This project is about
 controlling database load. The queries stay visible.
+
+---
+
+## Dashboard
+
+```bash
+task up
+cd web && npm install && npm run dev     # http://localhost:5173
+```
+
+Live database QPS, hit rate, Bloom saturation and measured false positive rate,
+a probe for firing reads at existing or absent ids, and the four switches above.
+Rates are deltas between consecutive scrapes divided by real elapsed time, never
+raw counters — see [web/README.md](web/README.md).
 
 ---
 
