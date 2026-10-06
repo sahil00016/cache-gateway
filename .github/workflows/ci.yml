@@ -173,3 +173,31 @@ jobs:
           echo "container did not become live:"
           docker logs cg
           exit 1
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          # Pinned, and >= 1.10 because the S3 backend uses native locking
+          # (use_lockfile) instead of a DynamoDB table.
+          terraform_version: 1.13.1
+          terraform_wrapper: false
+
+      - name: Formatting
+        run: terraform fmt -check -recursive deploy/terraform
+
+      - name: Validate
+        # -backend=false so validation needs no AWS credentials and no access to
+        # the state bucket. This job checks that the configuration is coherent,
+        # not that it matches deployed reality.
+        run: |
+          for d in deploy/terraform/modules/single-box-service deploy/terraform/envs/prod; do
+            echo "::group::$d"
+            terraform -chdir="$d" init -backend=false -input=false
+            terraform -chdir="$d" validate
+            echo "::endgroup::"
+          done
