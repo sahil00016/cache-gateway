@@ -21,13 +21,23 @@ under load, measured, fixed, and measured again.
 
 | # | Problem | Fix | Status |
 |---|---|---|---|
-| 1 | **Penetration** -- lookups for keys that do not exist miss the cache every time and hit the database. Trivially weaponisable. | Bloom filter (1.2 MB per worker), blocks 99%+ of attacks. See [ADR-0003](docs/adr/0003-bloom-filter-for-penetration-protection.md). | **M4 ✓** |
-| 2 | **Avalanche** -- many keys share a TTL, expire together, and the database takes the full load at once. | TTL jitter (10% uniform), spreads expiry over jitter window. See [ADR-0004](docs/adr/0004-ttl-jitter-for-avalanche-protection.md). | **M5 ✓** |
-| 3 | **Stampede** -- one hot key expires and every concurrent request misses simultaneously. | Hand-built request coalescing (per-worker), 99.2%+ reduction. See [ADR-0005](docs/adr/0005-request-coalescing-for-stampede-protection.md). | **M6 ✓** |
-| 4 | **Consistency** -- a write updates the database but the cache keeps serving the old row. | Cache-aside with delete-on-write | M7 |
+| 1 | **Penetration** -- lookups for keys that do not exist miss the cache every time and hit the database. Trivially weaponisable. | Bloom filter, 1.2 MB per worker. **Measured: 99.0% fewer database queries** (23,195 → 242). [ADR-0003](docs/adr/0003-bloom-filter-for-penetration-protection.md) · [results](benchmarks/PENETRATION.md) | **M4 ✓** |
+| 2 | **Avalanche** -- many keys share a TTL, expire together, and the database takes the full load at once. | TTL jitter, 10% uniform. **Measured: 19.5% lower peak QPS** (113 → 91), abrupt wall becomes a six-second ramp. [ADR-0004](docs/adr/0004-ttl-jitter-for-avalanche-protection.md) · [results](benchmarks/AVALANCHE.md) | **M5 ✓** |
+| 3 | **Stampede** -- one hot key expires and every concurrent request misses simultaneously. | Hand-built per-worker request coalescing. **Measured: 89.9% fewer duplicate queries**, ~18.7 per expiry → ~2.5. [ADR-0005](docs/adr/0005-request-coalescing-for-stampede-protection.md) · [results](benchmarks/STAMPEDE.md) | **M6 ✓** |
+| 4 | **Consistency** -- a write updates the database but the cache keeps serving the old row. | Cache-aside with delete-on-write. **Measured: median staleness 29.7s → 0.47s**, read-your-own-writes failures 99.5% → 1.3%. [ADR-0006](docs/adr/0006-cache-invalidation-strategy.md) · [results](benchmarks/CONSISTENCY.md) | **M7 ✓** |
 
-Every protection is independently toggleable at runtime, so each failure can be
-reproduced on a live instance rather than only described.
+Every protection has a flag that disables it, so each failure can be reproduced
+rather than only described: `BLOOM_ENABLED`, `CACHE_TTL_JITTER_PCT`,
+`COALESCE_ENABLED`, `CACHE_INVALIDATE_ON_WRITE`. They are read at process start,
+so changing one needs a restart — the service does not yet support flipping a
+protection on a running instance.
+
+**Three of the four reductions above are smaller than this README previously
+claimed.** The numbers were predictions until the benchmarks were run on
+2026-10-05; where measurement disagreed, the ADR was amended and the prediction
+left visible. The stampede figure in particular was 99.2% on paper and is 86.6%
+in practice, because a real stampede against a 2.5 ms query is about 19
+duplicates deep rather than 500.
 
 ---
 
@@ -123,10 +133,37 @@ controlling database load. The queries stay visible.
 
 ## Deployment
 
-Terraform provisions a single EC2 instance running docker-compose. ECS Fargate
-was considered and rejected on cost; the tradeoff, and what would change at real
-scale, are written up in the deploy notes. The deploy workflow exists at
-`.github/workflows/deploy.yml` and is manual-dispatch only until M10.
+Terraform provisions one t3.micro running docker-compose, in a VPC it also
+creates, with an ECR repository and a GitHub OIDC role to push to it. The module
+is service-agnostic and reusable.
+
+```bash
+cp deploy/terraform/envs/prod/terraform.tfvars.example \
+   deploy/terraform/envs/prod/terraform.tfvars   # add your IP, key and email
+
+task infra:plan     # what would change
+task infra:up       # create; prints the new DEPLOY_HOST
+task infra:down     # destroy; run this when the demo is over
+task infra:check    # fmt -check and validate, same as CI
+```
+
+**The box is deliberately ephemeral — nothing runs between demos.** No Elastic
+IP, NAT gateway, load balancer, or managed datastore is provisioned; those four
+are the usual reason a small AWS account produces a surprising bill. Everything
+that remains is free at rest, so **a three-hour demo session costs under five
+cents** and an idle account costs nothing.
+
+The trade-off is that the public IP changes on every apply, so `DEPLOY_HOST`
+must be updated on the GitHub Environment each time. `task infra:up` prints it.
+
+Reasoning and rejected alternatives:
+[ADR-0010](docs/adr/0010-single-box-ephemeral-infrastructure.md) ·
+[module README](deploy/terraform/modules/single-box-service/README.md).
+
+**Status:** the Terraform is written and `terraform validate` passes in CI, but
+**it has not yet been applied** — no AWS account was available that it would be
+appropriate to apply it to. Benchmarks run against local compose by design and
+do not depend on this (see ADR-0010).
 
 ---
 
