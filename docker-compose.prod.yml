@@ -1,0 +1,81 @@
+# Production stack for the single EC2 box.
+#
+# Differs from docker-compose.yml in three ways that matter:
+#   - the api image is PULLED from ECR, never built on the box (a t3.micro has
+#     1 GB of RAM and no business compiling anything)
+#   - Postgres and Redis publish no host ports; they are reachable only inside
+#     the compose network, so the security group does not have to defend them
+#   - restart: always, so a reboot brings the stack back without an operator
+#
+# Terraform's user-data writes the .env this reads. IMAGE is rewritten by
+# deploy.yml to a SHA-tagged image on each deploy.
+
+name: cache-gateway
+
+services:
+  api:
+    image: ${IMAGE}
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    # No `ports:` on purpose. Nothing outside the box needs Postgres, and not
+    # publishing it means the generated password never has to hold a line
+    # against the internet.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: always
+    command:
+      - postgres
+      - -c
+      - max_connections=100
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: always
+    command:
+      # Same reasoning as local: this is a cache, losing it on restart is
+      # correct, and 256mb fits a 1 GB box alongside Postgres and 4 workers.
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+
+volumes:
+  pgdata:

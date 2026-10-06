@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+#
+# First-boot provisioning for ${service_name}/${environment}.
+#
+# Everything is logged to /var/log/user-data.log, because a user-data script
+# that fails silently leaves a box that looks healthy to Terraform and serves
+# nothing. That is the single most common way this kind of deploy goes wrong.
+#
+# Idempotent throughout: cloud-init only runs this at first boot, but it is also
+# safe to re-run by hand while debugging.
+
+set -euo pipefail
+exec > >(tee -a /var/log/user-data.log) 2>&1
+
+echo "=== user-data starting $(date -Is) ==="
+
+APP_DIR="/opt/${service_name}/${environment}"
+
+# ------------------------------------------------------------------ packages --
+dnf update -y
+dnf install -y docker
+
+# The compose plugin is not packaged for AL2023, so it is installed to the
+# docker cli plugin directory by hand. Pinned: 'latest' here would mean the box
+# silently changes compose version between applies.
+COMPOSE_VERSION="v2.32.4"
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL \
+  "https://github.com/docker/compose/releases/download/$${COMPOSE_VERSION}/docker-compose-linux-x86_64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+systemctl enable --now docker
+usermod -aG docker ec2-user
+
+# AL2023 ships the AWS CLI v2 already; installing it again would be slower and
+# no more correct.
+aws --version
+
+# ------------------------------------------------------------------ app dir --
+mkdir -p "$${APP_DIR}"
+cd "$${APP_DIR}"
+
+# ------------------------------------------------------------------- secrets --
+# Written 0600 and owned by root. Postgres is not published to the host, so this
+# password never crosses the network; it exists so the containers agree on one.
+cat > "$${APP_DIR}/.env" <<ENVFILE
+POSTGRES_USER=${service_name}
+POSTGRES_PASSWORD=${postgres_password}
+POSTGRES_DB=${service_name}
+DATABASE_URL=postgresql+asyncpg://${service_name}:${postgres_password}@db:5432/${service_name}
+REDIS_URL=redis://redis:6379/0
+ENVIRONMENT=${environment}
+LOG_LEVEL=WARNING
+DEBUG=false
+DB_ECHO=false
+WEB_CONCURRENCY=4
+IMAGE=${ecr_repository}:latest
+APP_PORT=${container_port}
+ENVFILE
+chmod 600 "$${APP_DIR}/.env"
+chown -R ec2-user:ec2-user "/opt/${service_name}"
+
+# ---------------------------------------------------------------- ecr login --
+# Uses the instance profile; no credentials are written to the box.
+aws ecr get-login-password --region ${aws_region} \
+  | docker login --username AWS --password-stdin ${ecr_registry}
+
+# Persist the login for the ec2-user that deploy.yml connects as, so a deploy
+# does not have to re-authenticate interactively.
+mkdir -p /home/ec2-user/.docker
+cp /root/.docker/config.json /home/ec2-user/.docker/config.json 2>/dev/null || true
+chown -R ec2-user:ec2-user /home/ec2-user/.docker
+
+echo "=== user-data finished $(date -Is) ==="
+echo "Waiting for a deploy to place docker-compose.prod.yml in $${APP_DIR}."

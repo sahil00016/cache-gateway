@@ -171,3 +171,47 @@ tasks:
     desc: Run the API on the host with reload, against the compose datastores
     cmds:
       - "{{.VENV}}/bin/uvicorn src.asgi:app --reload --port 8010"
+
+  # ------------------------------------------------------------------ infra --
+  # The box is ephemeral by design: nothing runs between demos. A three-hour
+  # session costs under five cents; an instance left running does not.
+
+  infra:plan:
+    desc: Show what applying the prod infrastructure would change
+    dir: deploy/terraform/envs/prod
+    cmds:
+      - terraform init -input=false
+      - terraform plan -input=false
+
+  infra:up:
+    desc: Create the prod box. Prints the new DEPLOY_HOST -- it changes every apply.
+    dir: deploy/terraform/envs/prod
+    cmds:
+      - terraform init -input=false
+      - terraform apply -input=false -auto-approve
+      - |
+        echo ""
+        echo "  DEPLOY_HOST  $(terraform output -raw deploy_host)"
+        echo "  health       $(terraform output -raw health_url)"
+        echo "  ssh          $(terraform output -raw ssh_command)"
+        echo ""
+        echo "  There is no Elastic IP, so this address is new. Update the"
+        echo "  DEPLOY_HOST secret on the prod GitHub Environment before deploying."
+
+  infra:down:
+    desc: Destroy the prod box. Run this when the demo is over.
+    dir: deploy/terraform/envs/prod
+    cmds:
+      - terraform destroy -input=false -auto-approve
+
+  infra:check:
+    desc: Formatting and validation for every Terraform config. Mirrors CI.
+    dir: deploy/terraform
+    cmds:
+      - terraform fmt -check -recursive
+      - |
+        for d in modules/single-box-service envs/prod; do
+          echo "validating $d"
+          terraform -chdir="$d" init -backend=false -input=false >/dev/null
+          terraform -chdir="$d" validate
+        done

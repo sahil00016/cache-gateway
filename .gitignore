@@ -29,9 +29,12 @@ benchmarks/results/smoke-*.json
 benchmarks/results/*-runsmoke.json
 
 # Terraform
-deploy/terraform/.terraform/
+**/.terraform/
 *.tfstate
 *.tfstate.*
+crash.log
+# tfvars holds the operator's IP and email. This repository is public, so the
+# real file stays local and terraform.tfvars.example documents its shape.
 *.tfvars
 !*.tfvars.example
 

@@ -1,0 +1,23 @@
+# Copy to terraform.tfvars and fill in. The real file is gitignored: this is a
+# public repository, and ssh_cidr is the operator's home IP.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#   # then, to pin both rules to your current address:
+#   echo "ssh_cidr = \"$(curl -s https://checkip.amazonaws.com)/32\""
+
+# Operator IP as a /32. Never 0.0.0.0/0 -- the module rejects it for SSH,
+# because the security group is the only access control on this box.
+ssh_cidr = "203.0.113.10/32"
+
+# Same by default. Widen to "0.0.0.0/0" only for a live demo, then narrow again.
+app_cidr = "203.0.113.10/32"
+
+# Contents of your public key file, e.g. ~/.ssh/id_ed25519.pub
+public_key = "ssh-ed25519 AAAA... you@example.com"
+
+# Notified at 80% forecast and 100% actual. Leave empty to skip the budget alarm.
+budget_notification_email = "you@example.com"
+
+# The GitHub OIDC provider is account-global. Set false if this account already
+# has one from another project, or the apply fails with EntityAlreadyExists.
+create_oidc_provider = true
