@@ -41,3 +41,4 @@ crash.log
 # Node (dashboard)
 web/node_modules/
 web/dist/
+web/*.tsbuildinfo
